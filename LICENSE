@@ -1,3 +1,32 @@
+Firstly, I'd like to request that you not submit this program unmodified
+to the Google AI Contest 2010.  The license I've chosen (details below)
+does not enforce this request.  Instead, I'll simply make the request here
+and let you voluntarily decide to honor it or not.
+
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Lesser General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public License
+along with this program, in the LICENSE.LGPLv3 file.  If not, see
+<http://www.gnu.org/licenses/>.  In addition, since the
+GNU Lesser General Public License is based on the GNU General Public License,
+a copy of the GNU General Public License should be in the LICENSE.GPLv3
+file.  If not, again see <http://www.gnu.org/licenses/>.
+
+
+This program is based on the Unofficial Haskell starter package.  Any files,
+functions, or other clearly separable parts of this program that remain
+unchanged from those in the Unofficial Haskell starter package are also
+available under the following license:
+
             DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
                     Version 2, December 2004
 
