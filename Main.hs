@@ -37,11 +37,13 @@ doTurn state = if null myPlanets || null targets
 
     -- Heuristic value of a planet.
     -- Planets with high production are preferred.
+    --   Enemy planets have their production doubled, because it takes
+    --   away from the opposition.
     -- In case of tie, use the closet one.
     -- In case of tie, use the one that takes the fewest ships to conquer
     value (p, (d, s)) = (-growth, d, s)
       where
-        growth = planetGrowthRate p
+        growth = (if isHostile p then (*2) else id) $ planetGrowthRate p
 
     -- Target the "best" planet that we have enough ships to take.
     targets = filter ((< availableShips) . snd . snd)
