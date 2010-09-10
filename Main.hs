@@ -10,13 +10,13 @@ import PlanetWars
 
 doTurn :: GameState  -- ^ Game state
        -> [Order]    -- ^ Orders
-doTurn state = if null myPlanets || null targets
+doTurn state = if null myPlanets
     -- No valid orders
     then []
     -- If we have a fleet in flight, just do nothing
-    else orders
+    else attackOrders targets availableShips
   where
-    myFleets = filter isAllied $ gameStateFleets state
+    (myFleets, enemyFleets) = partition isAllied $ gameStateFleets state
 
     -- Partition all planets
     (myPlanets, notMyPlanets) = partition isAllied $
@@ -25,15 +25,22 @@ doTurn state = if null myPlanets || null targets
     -- Longest trip from one of my planets
     maxDistance p = maximum $ map (distanceBetween p) myPlanets
 
+    -- Count the number of ships in all given fleets headed toward a planet.
+    sumFleetShips fs p = sum $ map fleetShips
+        $ filter ((== planetId p) . fleetDestination) fs
+
     -- Ships available to send (~60%)
-    availableShips = (total * 6) `div` 10
-      where total = sum $ map planetShips myPlanets
+    availableShips = total
+      where
+        total = sum $ map planetAvailable myPlanets
+        planetAvailable p = maximum [0, planetShips p - sumFleetShips enemyFleets p]
 
     extendPlanet p = (p, (distance, ships))
       where
         distance = ceiling $ maxDistance p
         ships = (if isHostile p then planetGrowthRate p * distance else 0)
               + planetShips p
+              - sumFleetShips myFleets p
 
     -- Heuristic value of a planet.
     -- Planets with high production are preferred.
@@ -50,20 +57,29 @@ doTurn state = if null myPlanets || null targets
            $ sortBy (comparing value) $ map extendPlanet notMyPlanets
     target = head targets
 
-    -- Send at least enough ships to conquer it.
-    totalFleetSize = (snd $ snd target) + 1
-
-    -- Per-planet fleet size
-    fleetSize p = (totalFleetSize * planetShips p) `divCeil` availableShips
+    attackOrders []  _ = []
+    attackOrders  _  0 = []
+    attackOrders ts as = orders ++ attackOrders ts' as'
       where
-        divCeil x y = if r > 0 then q + 1 else q
-          where (q, r) = x `divMod` y
+        -- Choose the target, retain the rest.
+        (target:remaining) = ts
 
-    -- Per-planet orders
-    order p = Order (planetId p) (planetId $ fst target) (fleetSize p)
+        -- Send at least enough ships to conquer it.
+        totalFleetSize = (snd $ snd target) + 1
 
-    -- All orders
-    orders = filter ((> 0) . orderShips) $ map order myPlanets
+        -- Per-planet fleet size
+        fleetSize p = (totalFleetSize * planetShips p) `divCeil` as
+          where
+            divCeil x y = if r > 0 then q + 1 else q
+              where (q, r) = x `divMod` y
+
+        -- Calulate the first set of orders
+        order p = Order (planetId p) (planetId $ fst target) (fleetSize p)
+        orders = filter ((> 0) . orderShips) $ map order myPlanets
+
+        -- Reduce targets and availableShips for recursive call
+        as' = as - (sum $ map orderShips orders)
+        ts' = filter ((< as') . snd . snd) $ remaining
 
 main :: IO ()
 main = bot doTurn
