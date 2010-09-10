@@ -32,7 +32,7 @@ doTurn state = if null myPlanets || null targets
     extendPlanet p = (p, (distance, ships))
       where
         distance = ceiling $ maxDistance p
-        ships = if isHostile p then planetGrowthRate p * distance else 0
+        ships = (if isHostile p then planetGrowthRate p * distance else 0)
               + planetShips p
 
     -- Heuristic value of a planet.
