@@ -18,6 +18,7 @@ module PlanetWars
     , engage
     , engageAll
     , distanceBetween
+    , centroid
     , isArrived
 
       -- * Step the state
@@ -80,7 +81,11 @@ data Order = Order
     , orderShips       :: Int
     } deriving (Show)
 
--- | A data structure describing the game state
+-- | A data structure describing the game state.
+--
+-- * Planets are mapped by id
+--
+-- * Fleets are mapped by destination
 --
 data GameState = GameState
     { gameStatePlanets :: IntMap Planet
@@ -131,12 +136,12 @@ isAllied = (== 1) . owner
 -- | Check if a given resource is hostile
 --
 isHostile :: Resource r => r -> Bool
-isHostile = (== 2) . owner
+isHostile = (>= 2) . owner
 
 -- | Check if a given resource is neutral
 --
 isNeutral :: Resource r => r -> Bool
-isNeutral p = not (isAllied p || isHostile p)
+isNeutral = (<= 0) . owner
 
 -- | Add (or subtract) a number of ships to (or from) a planet
 --
@@ -178,10 +183,24 @@ distanceBetween p1 p2 = let dx = planetX p1 - planetX p2
                             dy = planetY p1 - planetY p2
                         in sqrt $ dx * dx + dy * dy
 
+-- | Find the centroid of the given planets
+--
+centroid :: IntMap Planet -> (Double, Double)
+centroid planets = div' $ IM.fold add' (0, 0) planets
+  where
+    add' planet (x, y) = (x + planetX planet, y + planetY planet)
+    div' (x, y) = let size = fromIntegral $ IM.size planets
+                  in (x / size, y / size)
+
 -- | Check if a fleet has arrived
 --
 isArrived :: Fleet -> Bool
 isArrived = (== 0) . fleetTurnsRemaining
+
+-- | Check if a planet is under attack
+--
+isUnderAttack :: GameState -> Planet -> Bool
+isUnderAttack state planet = undefined
 
 -- | Step the game state for one turn
 --
@@ -196,7 +215,8 @@ step state = state
     stepFleet fleet = fleet
         { fleetTurnsRemaining = fleetTurnsRemaining fleet - 1
         }
-    grow planet = addShips planet (planetGrowthRate planet)
+    grow planet | isNeutral planet = planet
+                | otherwise = addShips planet (planetGrowthRate planet)
 
 -- | Execute an order
 --
