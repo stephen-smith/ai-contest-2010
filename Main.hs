@@ -16,13 +16,30 @@ doTurn state = if null myPlanets
     -- No valid orders
     then []
     -- If we have a fleet in flight, just do nothing
-    else attackOrders myPlanets targets
+    else attackOrders modPlanets targets
   where
     (myFleets, enemyFleets) = partition isAllied $ gameStateFleets state
 
     -- Partition all planets
     (myPlanets, notMyPlanets) = partition isAllied $
         map snd $ IM.toList $ gameStatePlanets state
+
+    planetById id = gameStatePlanets state IM.! id
+
+    -- Count attackers
+    attackingFleets = filter (isAllied . planetById .fleetDestination) enemyFleets
+
+    attackersByDest = foldr accum IM.empty attackingFleets
+      where
+        accum f = IM.insertWith (+) (fleetDestination f) (fleetShips f)
+
+    -- Hold back ships to defend
+    modPlanets = map mut myPlanets
+      where
+        mut p = p { planetShips = r }
+          where
+            attackers = IM.findWithDefault 0 (planetId p) attackersByDest
+            r = maximum [0, planetShips p - attackers]
 
     -- Longest trip from one of my planets
     maxDistance p = maximum $ map (distanceBetween p) myPlanets
@@ -34,8 +51,9 @@ doTurn state = if null myPlanets
     extendPlanet p = (p, (distance, ships))
       where
         distance = ceiling $ maxDistance p
-        ships = (if isHostile p then planetGrowthRate p * distance else 0)
-              + planetShips p
+        ships = maximum [0, ships']
+        ships' =(if isHostile p then planetGrowthRate p * distance else 0)
+              + planetShips p + 1
               - sumFleetShips myFleets p
 
     -- Heuristic value of a planet.
@@ -46,26 +64,25 @@ doTurn state = if null myPlanets
     -- In case of tie, use the one that takes the fewest ships to conquer
     value (p, (d, s)) = (-growth, d, s)
       where
-        growth = (if isHostile p then (*2) else id) $ planetGrowthRate p
+        growth = (if isHostile p then (+1) . (*2) else id) $ planetGrowthRate p
 
     -- Target the "best" planet that we have enough ships to take.
     targets = sortBy (comparing value) $ map extendPlanet notMyPlanets
 
-    attackOrders mp ts | null targets = []
-                       | otherwise    = orders ++ attackOrders mp' ts'
+    attackOrders mp ts | null targets        = []
+                       | availableShips == 0 = []
+                       | otherwise = orders ++ attackOrders mp' ts'
       where
         -- Ships available to send
-        availableShips = sum $ map planetAvailable mp
-          where
-            planetAvailable p = maximum [0, planetShips p - incoming]
-              where incoming = sumFleetShips enemyFleets p
+        availableShips = total
+          where total = sum $ map planetShips mp
 
         -- Choose the target, retain the rest.
         targets = filter ((< availableShips) . snd . snd) ts
         (target:ts') = targets
 
         -- Send at least enough ships to conquer it.
-        totalFleetSize = (snd $ snd target) + 1
+        totalFleetSize = (snd $ snd target)
 
         -- Per-planet fleet size
         fleetSize p = (totalFleetSize * planetShips p) `divCeil` availableShips
