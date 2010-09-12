@@ -1,6 +1,7 @@
 -- | Library for the Planet Wars google ai contest. More information can be
 -- found on http://ai-contest.com.
 --
+{-# LANGUAGE FlexibleInstances #-}
 module PlanetWars
     ( 
       -- * Data structures
@@ -20,6 +21,13 @@ module PlanetWars
     , distanceBetween
     , centroid
     , isArrived
+    , planets
+    , production
+    , planetById
+    , willSurviveAttack
+    , currentOwner
+    , planetsUnderAttack
+    , incomingFleets
 
       -- * Step the state
     , step
@@ -31,19 +39,35 @@ module PlanetWars
       -- * Bots
     , bot
     , ioBot
+
+      -- * Debugging
+    , stateFromFile
+    , unique
     ) where
 
 import Control.Applicative ((<$>))
-import Data.List (intercalate, isPrefixOf, partition)
+import Data.List (intercalate, isPrefixOf, partition, foldl')
+import Data.Maybe (fromJust)
 import Data.Monoid (Monoid, mempty, mappend)
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
+import qualified Data.IntSet as IS
 import System.IO
 
 -- | Class for values that are owned by a player
 --
 class Resource a where
     owner :: a -> Int
+
+-- | Class for physical entities
+--
+class Entity a where
+    getX :: a -> Double
+    getY :: a -> Double
+
+instance Entity (Double, Double) where
+    getX = fst
+    getY = snd
 
 -- | Representation of a planet
 --
@@ -58,6 +82,10 @@ data Planet = Planet
 
 instance Resource Planet where
     owner = planetOwner
+
+instance Entity Planet where
+    getX = planetX
+    getY = planetY
 
 -- | Representation of a fleet
 --
@@ -178,9 +206,9 @@ engageAll planets fleets = foldl engage' planets fleets
 
 -- | Find the distance between two planets
 --
-distanceBetween :: Planet -> Planet -> Double
-distanceBetween p1 p2 = let dx = planetX p1 - planetX p2
-                            dy = planetY p1 - planetY p2
+distanceBetween :: (Entity a, Entity b) => a -> b -> Double
+distanceBetween p1 p2 = let dx = getX p1 - getX p2
+                            dy = getY p1 - getY p2
                         in sqrt $ dx * dx + dy * dy
 
 -- | Find the centroid of the given planets
@@ -197,10 +225,28 @@ centroid planets = div' $ IM.fold add' (0, 0) planets
 isArrived :: Fleet -> Bool
 isArrived = (== 0) . fleetTurnsRemaining
 
--- | Check if a planet is under attack
+-- | List of Planets from a game state.
 --
-isUnderAttack :: GameState -> Planet -> Bool
-isUnderAttack state planet = undefined
+planets :: GameState  -- ^ Game state to analyze
+        -> [Planet]   -- ^ List of Planets
+planets state = map snd $ IM.toList $ gameStatePlanets state
+
+-- | Calculate the production (number of new ships in the next turn) of both
+-- players.
+--
+production :: GameState  -- ^ Game state to analyze
+           -> (Int, Int) -- ^ Pair having the player and enemy's production
+production g = foldl' prod (0,0) (planets g)
+  where 
+    prod (x,y) p = case planetOwner p of
+      0 -> (x,y)
+      1 -> (x + planetGrowthRate p, y)
+      2 -> (x, y + planetGrowthRate p)
+
+-- | Get a planet by ID. Make sure the ID exists!
+--
+planetById :: GameState -> Int -> Planet
+planetById state id' = fromJust $ IM.lookup id' $ gameStatePlanets state
 
 -- | Step the game state for one turn
 --
@@ -258,3 +304,58 @@ ioBot f = do
                 loop mempty
             -- Keep building map
             else loop (buildGameState state line)
+
+-- | Read a game state from file. The format is the same as the server's output
+-- for a turn. Useful when debugging.
+--
+stateFromFile :: FilePath     -- ^ Path to the file containing the game state.
+              -> IO GameState -- ^ Parsed game state
+stateFromFile path = withFile path ReadMode (read mempty)
+  where
+    read state handle = do
+      line <- takeWhile (/= '#') <$> hGetLine handle
+      if "go" `isPrefixOf` line
+        then return state
+        else read (buildGameState state line) handle
+
+-- | Checks if a planet will survive the incoming fleets. A planet survives if
+-- its owner is still the same after all known fleets arrive.
+--
+willSurviveAttack :: GameState -- ^ Initial game state
+                  -> Int       -- ^ Planet ID
+                  -> Bool      -- ^ Whether the planet survived
+willSurviveAttack state pid = survives state
+  where
+    originalOwner = currentOwner state pid
+    survives s = if null $ incomingFleets s pid
+      then currentOwner s pid == originalOwner
+      else survives $ step s
+
+-- | The owner of a planet in a given game state.
+--
+currentOwner :: GameState -- ^ Current game state
+             -> IM.Key    -- ^ Planet ID
+             -> Int       -- ^ Owner ID
+currentOwner state pid = owner $ gameStatePlanets state IM.! pid
+
+-- | List of planets under attack, i.e., that have incoming fleets.
+--
+planetsUnderAttack :: GameState -- ^ Game state to analyze
+                   -> [Int]     -- ^ List of IDs of planets under attack
+planetsUnderAttack = (map fleetDestination) . gameStateFleets
+
+-- | List of incoming fleets for a given planet in a certain game state.
+--
+incomingFleets :: GameState -- ^ Game state containing the current fleets
+               -> Int       -- ^ Planet ID
+               -> [Fleet]   -- ^ Incoming fleets
+incomingFleets state pid = filter pidMatches fleets
+  where
+    pidMatches = (== pid) . fleetDestination
+    fleets = gameStateFleets state
+
+-- | Removes duplicates from a list of Ints
+--
+unique :: [Int] -> [Int]
+unique = IS.toList . IS.fromList
+
