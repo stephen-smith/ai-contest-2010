@@ -25,7 +25,7 @@ doTurn state = if IM.null myPlanets
     -- No valid orders
     then []
     -- If we have a fleet in flight, just do nothing
-    else attackOrders modPlanets targets
+    else attackOrders myPlanets targets
   where
     (myFleets, enemyFleets) = partition isAllied $ gameStateFleets state
 
@@ -71,14 +71,6 @@ doTurn state = if IM.null myPlanets
     fleetByDest f = IM.singleton (fleetDestination f) (fleetShips f)
     attackersByDest = IM.unionsWith (+) $ map fleetByDest enemyFleets
     supportByDest = IM.unionsWith (+) $ map fleetByDest myFleets
-
-    -- Hold back ships to defend
-    modPlanets = IM.map mut myPlanets
-      where
-        mut p = p { planetShips = r }
-          where
-            attackers = IM.findWithDefault 0 (planetId p) attackersByDest
-            r = maximum [0, planetShips p - attackers]
 
     -- Longest trip from one of my planets
     maxDistance p = maximum $ map (distance p) $ IM.elems myPlanets
