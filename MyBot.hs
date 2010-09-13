@@ -2,6 +2,8 @@
 --
 module Main where
 
+import Control.Applicative ((<$>), (<*>))
+
 import Data.List (maximumBy, minimumBy, partition, sortBy)
 import qualified Data.IntMap as IM
 import Data.Ord (comparing)
@@ -12,7 +14,7 @@ import PlanetWars
 
 doTurn :: GameState  -- ^ Game state
        -> [Order]    -- ^ Orders
-doTurn state = if null myPlanets
+doTurn state = if IM.null myPlanets
     -- No valid orders
     then []
     -- If we have a fleet in flight, just do nothing
@@ -22,8 +24,8 @@ doTurn state = if null myPlanets
 
     -- Partition all planets
     planetsMap = gameStatePlanets state
-    (myPlanets, notMyPlanets) = partition isAllied $
-        map snd $ IM.toList planetsMap
+    (myPlanets, notMyPlanets') = IM.partition isAllied planetsMap
+    notMyPlanets = IM.elems notMyPlanets'
 
     planetById id = planetsMap IM.! id
 
@@ -66,7 +68,7 @@ doTurn state = if null myPlanets
         accum f = IM.insertWith (+) (fleetDestination f) (fleetShips f)
 
     -- Hold back ships to defend
-    modPlanets = map mut myPlanets
+    modPlanets = IM.map mut myPlanets
       where
         mut p = p { planetShips = r }
           where
@@ -74,7 +76,7 @@ doTurn state = if null myPlanets
             r = maximum [0, planetShips p - attackers]
 
     -- Longest trip from one of my planets
-    maxDistance p = maximum $ map (distance p) myPlanets
+    maxDistance p = maximum $ map (distance p) $ IM.elems myPlanets
 
     -- Count the number of ships in all given fleets headed toward a planet.
     sumFleetShips fs p = sum $ map fleetShips
@@ -107,7 +109,7 @@ doTurn state = if null myPlanets
       where
         -- Ships available to send
         availableShips = total
-          where total = sum $ map planetShips mp
+          where total = IM.fold ((+) . planetShips) 0 mp
 
         -- Choose the target, retain the rest.
         targets = filter ((< availableShips) . snd . snd) ts
@@ -128,8 +130,9 @@ doTurn state = if null myPlanets
             fleet = fleetSize p
             order = orderViaWaypoints (planetId p) (planetId $ fst target) fleet
             p' = p { planetShips = planetShips p - fleet }
-        (all_orders, mp') = unzip $ map delta mp
+        (all_orders, mpl') = unzip $ map delta $ IM.elems mp
         orders = filter ((> 0) . orderShips) all_orders
+        mp' = IM.fromList $ map ((,) <$> planetId <*> id) mpl'
 
 main :: IO ()
 main = bot doTurn
