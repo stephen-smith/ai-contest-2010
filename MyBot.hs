@@ -19,13 +19,20 @@ splitWhile f l@(x:xs)
   | f x       = let (p, t) = splitWhile f xs in (x:p, t)
   | otherwise = ([], l)
 
+reduceOrders :: [Order] -> [Order]
+reduceOrders xs = concat $ IM.elems $ IM.map IM.elems orderMap
+  where
+    orderMap = IM.mapWithKey (IM.mapWithKey . Order) shipsMap
+    shipsMap = IM.unionsWith (IM.unionWith (+)) $ map shipMap xs
+    shipMap o = IM.singleton (orderSource o)
+               $ IM.singleton (orderDestination o) (orderShips o)
 doTurn :: GameState  -- ^ Game state
        -> [Order]    -- ^ Orders
 doTurn state = if IM.null myPlanets
     -- No valid orders
     then []
     -- If we have a fleet in flight, just do nothing
-    else attackOrders myPlanets targets
+    else reduceOrders $ attackOrders myPlanets targets
   where
     (myFleets, enemyFleets) = partition isAllied $ gameStateFleets state
 
