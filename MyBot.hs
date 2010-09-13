@@ -4,13 +4,20 @@ module Main where
 
 import Control.Applicative ((<$>), (<*>))
 
-import Data.List (maximumBy, minimumBy, partition, sortBy)
+import Data.Function (on)
+import Data.List (maximumBy, minimumBy, partition, sortBy, groupBy)
 import qualified Data.IntMap as IM
 import Data.Ord (comparing)
 
 import qualified System.IO.Unsafe (unsafePerformIO)
 
 import PlanetWars
+
+splitWhile :: (a -> Bool) -> [a] -> ([a],[a])
+splitWhile _ [] = ([], [])
+splitWhile f l@(x:xs)
+  | f x       = let (p, t) = splitWhile f xs in (x:p, t)
+  | otherwise = ([], l)
 
 doTurn :: GameState  -- ^ Game state
        -> [Order]    -- ^ Orders
@@ -107,32 +114,48 @@ doTurn state = if IM.null myPlanets
                        | availableShips == 0 = []
                        | otherwise = orders ++ attackOrders mp' ts'
       where
+        mpl = IM.elems mp
+
         -- Ships available to send
         availableShips = total
-          where total = IM.fold ((+) . planetShips) 0 mp
+          where total = sum $ map planetShips mpl
 
         -- Choose the target, retain the rest.
-        targets = filter ((< availableShips) . snd . snd) ts
+        (_, targets) = splitWhile ((> availableShips) . snd . snd) ts
         (target:ts') = targets
 
         -- Send at least enough ships to conquer it.
         totalFleetSize = (snd $ snd target)
 
+        -- Send from close planets, first
+        (localShips, localPlanets) = close $ groupBy ((==) `on` distTarget)
+                                           $ sortBy (comparing distTarget)
+                                           $ mpl
+          where
+            distTarget = distance (fst target)
+            close = close' 0 []
+            close' have chosen           [] = (have, chosen)
+            close' have chosen avail@(x:xs)
+              | totalFleetSize <= have = (have, chosen)
+              | otherwise              = close' (have + got) (chosen ++ x) xs
+              where
+                got = sum $ map planetShips x
+
         -- Per-planet fleet size
-        fleetSize p = (totalFleetSize * planetShips p) `divCeil` availableShips
+        fleetSize p = (totalFleetSize * planetShips p) `divCeil` localShips
           where
             divCeil x y = if r > 0 then q + 1 else q
               where (q, r) = x `divMod` y
 
-        -- Calulate the first set of orders
+        -- Calculate the first set of orders
         delta p = (order, p')
           where
             fleet = fleetSize p
             order = orderViaWaypoints (planetId p) (planetId $ fst target) fleet
             p' = p { planetShips = planetShips p - fleet }
-        (all_orders, mpl') = unzip $ map delta $ IM.elems mp
+        (all_orders, mpl') = unzip $ map delta localPlanets
         orders = filter ((> 0) . orderShips) all_orders
-        mp' = IM.fromList $ map ((,) <$> planetId <*> id) mpl'
+        mp' = (IM.fromList $ map ((,) <$> planetId <*> id) mpl') `IM.union` mp
 
 main :: IO ()
 main = bot doTurn
