@@ -21,10 +21,42 @@ doTurn state = if null myPlanets
     (myFleets, enemyFleets) = partition isAllied $ gameStateFleets state
 
     -- Partition all planets
+    planetsMap = gameStatePlanets state
     (myPlanets, notMyPlanets) = partition isAllied $
-        map snd $ IM.toList $ gameStatePlanets state
+        map snd $ IM.toList planetsMap
 
-    planetById id = gameStatePlanets state IM.! id
+    planetById id = planetsMap IM.! id
+
+    -- Cache distance calculations.
+    distances :: IM.IntMap (IM.IntMap Int)
+    distances = IM.map oneToMany planetsMap
+      where
+        oneToMany p = IM.map (turnsBetween p) planetsMap
+        turnsBetween p q = ceiling $ distanceBetween p q
+
+    distanceById x y = (distances IM.! x) IM.! y
+    distance p q = distanceById (planetId p) (planetId q)
+
+    -- Calculate way-points
+    waypoints = IM.mapWithKey oneToMany planetsMap
+      where
+        oneToMany pid _ = IM.mapWithKey (allWaypoints pid) planetsMap
+        allWaypoints pid qid _ = IM.elems $ IM.filterWithKey isWaypoint planetsMap
+          where
+            dz = distanceById pid qid
+            isWaypoint rid _ = pid /= rid && rid /= qid && dx + dy <= dz
+              where
+                dx = distanceById pid rid
+                dy = distanceById rid qid
+
+    -- Use friendly way-points.
+    orderViaWaypoints s d z = if null wps
+        then Order s d z
+        else Order s wp z
+      where
+        wps = sortBy (comparing $ distanceById s . planetId) $ filter isAllied
+            $ (waypoints IM.! s) IM.! d
+        wp = planetId $ head wps
 
     -- Count attackers
     attackingFleets = filter (isAllied . planetById .fleetDestination) enemyFleets
@@ -42,7 +74,7 @@ doTurn state = if null myPlanets
             r = maximum [0, planetShips p - attackers]
 
     -- Longest trip from one of my planets
-    maxDistance p = maximum $ map (distanceBetween p) myPlanets
+    maxDistance p = maximum $ map (distance p) myPlanets
 
     -- Count the number of ships in all given fleets headed toward a planet.
     sumFleetShips fs p = sum $ map fleetShips
@@ -50,7 +82,7 @@ doTurn state = if null myPlanets
 
     extendPlanet p = (p, (distance, ships))
       where
-        distance = ceiling $ maxDistance p
+        distance = maxDistance p
         ships = maximum [0, ships']
         ships' =(if isHostile p then planetGrowthRate p * distance else 0)
               + planetShips p + 1
@@ -94,7 +126,7 @@ doTurn state = if null myPlanets
         delta p = (order, p')
           where
             fleet = fleetSize p
-            order = Order (planetId p) (planetId $ fst target) fleet
+            order = orderViaWaypoints (planetId p) (planetId $ fst target) fleet
             p' = p { planetShips = planetShips p - fleet }
         (all_orders, mp') = unzip $ map delta mp
         orders = filter ((> 0) . orderShips) all_orders
