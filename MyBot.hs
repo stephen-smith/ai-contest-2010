@@ -46,6 +46,7 @@ doTurn state = if IM.null myPlanets
     planetsMap = gameStatePlanets state
     myPlanets = IM.filter isAllied planetsMap
 
+    -- Count ship totals
     (myShips, theirShips) =
         (myPlanetShips + myFleetShips, theirPlanetShips + theirFleetShips)
       where
@@ -57,8 +58,20 @@ doTurn state = if IM.null myPlanets
                            | isAllied  p = (n + planetShips p, m)
                            | otherwise   = (n, m)
 
-    aggressiveness :: Rational
-    aggressiveness = fromIntegral myShips % fromIntegral (theirShips + myShips)
+    -- Count production totals
+    (myProduction, theirProduction) = IM.fold accum (0, 0) planetsMap
+      where
+        accum p (n, m) | isHostile p = (n, m + planetGrowthRate p)
+                       | isAllied  p = (n + planetGrowthRate p, m)
+                       | otherwise   = (n, m)
+
+    -- Adjust the number of ships on aggressive manuvers
+    need :: Rational -- Ranges over [0, 1]
+    need = fromIntegral theirProduction
+         % fromIntegral (theirProduction + myProduction)
+    greed :: Rational -- Ranges over [0, 1]
+    greed = fromIntegral myShips % fromIntegral (theirShips + myShips)
+    aggressiveness = need * greed -- Ranges over [0, 1]
 
     -- Cache distance calculations.
     distances :: IM.IntMap (IM.IntMap Int)
