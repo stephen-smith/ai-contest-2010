@@ -13,6 +13,11 @@ import qualified System.IO.Unsafe (unsafePerformIO)
 
 import PlanetWars
 
+infixl 7 `divCeil`
+divCeil :: Integral a => a -> a -> a
+divCeil x y = if r > 0 then q + 1 else q
+  where (q, r) = x `divMod` y
+
 splitWhile :: (a -> Bool) -> [a] -> ([a],[a])
 splitWhile _ [] = ([], [])
 splitWhile f l@(x:xs)
@@ -137,6 +142,10 @@ doTurn state = if IM.null myPlanets
 
         -- Choose the target, retain the rest.
         (_, targets) = splitWhile ((> availableShips) . snd . snd) ts
+          where
+            ok (p, (_, s)) = if isAllied p
+                then s > availableShips
+                else s > (availableShips `divCeil` 2)
         (target:ts') = targets
 
         -- Send at least enough ships to conquer it.
@@ -158,9 +167,6 @@ doTurn state = if IM.null myPlanets
 
         -- Per-planet fleet size
         fleetSize p = (totalFleetSize * planetShips p) `divCeil` localShips
-          where
-            divCeil x y = if r > 0 then q + 1 else q
-              where (q, r) = x `divMod` y
 
         -- Calculate the first set of orders
         delta p = (order, p')
