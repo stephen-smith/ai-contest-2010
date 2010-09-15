@@ -172,6 +172,61 @@ isHostile = (>= 2) . owner
 isNeutral :: Resource r => r -> Bool
 isNeutral = (<= 0) . owner
 
+-- | Perform the 'Departure' phase of game state update
+departure :: IntMap [Order] -- ^ Orders, grouped by issuing player
+          -> GameState      -- ^ Old game state
+          -> ( [Int]        -- ^ Players that gave an invalid order
+             , GameState    -- ^ New game state
+             )
+departure ordersMap gs = ( droppedPlayers, gs' )
+  where
+    ( droppedPlayers, gs' ) = foldl' accum ([], gs) $ IM.assocs
+                            $ IM.mapWithKey doOrders ordersMap
+    accum (ps, lgs) (p, f) | valid     = (ps, lgs')
+                           | otherwise = (p:ps, dropPlayer p lgs)
+      where
+        (valid, lgs') = f lgs
+    dropPlayer player lgs =
+        lgs { gameStatePlanets = IM.map setNeutral $ gameStatePlanets lgs
+            , gameStateFleets  = filter ((/= player) . fleetOwner)
+                               $ gameStateFleets lgs
+            }
+      where
+        setNeutral planet = if planetOwner planet == player
+            then planet { planetOwner = 0 }
+            else planet
+    doOrders _     [] lgs = ( True, lgs )
+    doOrders p (o:os) lgs = ( headValid && tailValid, lgs'' )
+      where
+        ( headValid, lgs' ) = doOrder p o lgs
+        ( tailValid, lgs'' ) = doOrders p os lgs'
+    doOrder p o lgs = ( valid, lgs' )
+      where
+        sourceId = orderSource o
+        sourcePlanet = planetById lgs sourceId
+        sourceShips = planetShips sourcePlanet
+        movingShips = orderShips o
+        destinationId = orderDestination o
+        tripLength = ceiling
+                   $ distanceBetween sourcePlanet (planetById lgs destinationId)
+        valid = sourceId == p
+              && sourceShips >= movingShips
+        lgs' = if valid
+            then lgs { gameStatePlanets =
+                           IM.singleton sourceId sourcePlanet
+                               { planetShips = sourceShips - movingShips
+                               } `IM.union` gameStatePlanets lgs
+                     , gameStateFleets = Fleet
+                           { fleetOwner = p
+                           , fleetShips = movingShips
+                           , fleetSource = sourceId
+                           , fleetDestination = orderDestination o
+                           , fleetTripLength = tripLength
+                           , fleetTurnsRemaining = tripLength
+                           } : gameStateFleets lgs
+                     }
+            else lgs
+
 -- | Add (or subtract) a number of ships to (or from) a planet
 --
 addShips :: Planet  -- ^ Planet to add ships to
