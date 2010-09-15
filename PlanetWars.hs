@@ -16,6 +16,8 @@ module PlanetWars
     , isHostile
     , isNeutral
     , addShips
+    , fleetIsArrived
+    , getPlanetById
     , distanceBetween
     , centroid
     , isArrived
@@ -52,9 +54,9 @@ import Data.List (intercalate, isPrefixOf, partition, foldl', sortBy)
 import Data.Maybe (fromJust)
 import Data.Monoid (Monoid, mempty, mappend)
 import Data.IntMap (IntMap)
-import Data.Ord (comparing)
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
+import Data.Ord (comparing)
 import System.IO
 
 -- | Class for values that are owned by a player
@@ -104,6 +106,11 @@ data Fleet = Fleet
 instance Resource Fleet where
     owner = fleetOwner
 
+-- | Check that fleet is arrived
+--
+fleetIsArrived :: Fleet -> Bool
+fleetIsArrived = (<=0) . fleetTurnsRemaining
+
 -- | Representation of an order
 --
 data Order = Order
@@ -127,6 +134,11 @@ instance Monoid GameState where
     mempty = GameState mempty mempty
     mappend (GameState p1 f1) (GameState p2 f2) =
         GameState (p1 `mappend` p2) (f1 `mappend` f2)
+
+-- | Find planet in GameState with given planetId
+--
+getPlanetById :: Int -> GameState -> Planet
+getPlanetById id state = (IM.!) (gameStatePlanets state) id
 
 -- | Auxiliary function for parsing the game state. This function takes an
 -- initial state, and a line. The line is parsed and content is applied on the
@@ -167,7 +179,7 @@ isAllied = (== 1) . owner
 -- | Check if a given resource is hostile
 --
 isHostile :: Resource r => r -> Bool
-isHostile = (>= 2) . owner
+isHostile = (> 1) . owner
 
 -- | Check if a given resource is neutral
 --
@@ -425,7 +437,13 @@ production g = foldl' prod (0,0) (planets g)
 planetById :: GameState -> Int -> Planet
 planetById state id' = fromJust $ IM.lookup id' $ gameStatePlanets state
 
--- | Execute an order
+-- | Aux
+partitionToIntMap :: (a -> Int) -> [a] -> IntMap [a]
+partitionToIntMap fn as =
+    let ins x = IM.insertWith (++) (fn x) [x]
+    in  foldr ins IM.empty as
+
+-- | Issue an order
 --
 issueOrder :: Order  -- ^ Order to execute
            -> IO ()  -- ^ Result
