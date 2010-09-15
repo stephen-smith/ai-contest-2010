@@ -41,6 +41,12 @@ module PlanetWars
     , ioBot
     , debugBot
 
+      -- ^ Engine / Simulation
+    , engineTurn
+    , engineTurnNoReport
+    , engineTurnNoOrders
+    , simpleEngineTurn
+
       -- * Debugging
     , stateFromFile
     , unique
@@ -212,7 +218,6 @@ departure ordersMap gs = ( droppedPlayers, gs' )
       where
         sourceId = orderSource o
         sourcePlanet = planetById lgs sourceId
-        sourceOwner = planetOwner sourcePlanet
         sourceShips = planetShips sourcePlanet
         movingShips = orderShips o
         destinationId = orderDestination o
@@ -248,8 +253,6 @@ departureNoFailReport = (snd <$>) <$> departure
 
 -- | Perform the 'Departure' phase of game state update with no orders
 --
-departureNoOrders = departure IM.empty
-
 simpleDeparture :: GameState -- ^ Old game state
                 -> GameState -- ^ New game state
 simpleDeparture = departureNoFailReport IM.empty
