@@ -29,9 +29,6 @@ module PlanetWars
     , planetsUnderAttack
     , incomingFleets
 
-      -- * Step the state
-    , step
-
       -- * Communication with the game engine
     , issueOrder
     , finishTurn
@@ -456,22 +453,6 @@ production g = foldl' prod (0,0) (planets g)
 planetById :: GameState -> Int -> Planet
 planetById state id' = fromJust $ IM.lookup id' $ gameStatePlanets state
 
--- | Step the game state for one turn
---
-step :: GameState -> GameState
-step state = state
-    { gameStatePlanets = IM.map grow $ engageAll (gameStatePlanets state) ready
-    , gameStateFleets = fleets'
-    }
-  where
-    (ready, fleets') =
-        partition isArrived $ map stepFleet $ gameStateFleets state
-    stepFleet fleet = fleet
-        { fleetTurnsRemaining = fleetTurnsRemaining fleet - 1
-        }
-    grow planet | isNeutral planet = planet
-                | otherwise = addShips planet (planetGrowthRate planet)
-
 -- | Execute an order
 --
 issueOrder :: Order  -- ^ Order to execute
@@ -560,7 +541,7 @@ willSurviveAttack state pid = survives state
     originalOwner = currentOwner state pid
     survives s = if null $ incomingFleets s pid
       then currentOwner s pid == originalOwner
-      else survives $ step s
+      else survives $ simpleEngineTurn s
 
 -- | The owner of a planet in a given game state.
 --
