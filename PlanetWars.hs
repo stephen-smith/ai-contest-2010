@@ -16,8 +16,6 @@ module PlanetWars
     , isHostile
     , isNeutral
     , addShips
-    , engage
-    , engageAll
     , distanceBetween
     , centroid
     , isArrived
@@ -382,32 +380,6 @@ addShips :: Planet  -- ^ Planet to add ships to
          -> Int     -- ^ Number of ships to add
          -> Planet  -- ^ Resulting planet
 addShips planet n = planet {planetShips = planetShips planet + n}
-
--- | Attack the given planet with the given fleet (or reinforce it, when the
--- planet is allied to the fleet)
---
-engage :: Planet  -- ^ Planet to engage with
-       -> Fleet   -- ^ Fleet to user
-       -> Planet  -- ^ Resulting planet
-engage planet fleet
-    -- Reinforce the planet
-    | owner planet == owner fleet = addShips planet $ fleetShips fleet
-    -- Attack the planet: planet was conquered
-    | shipsAfterAttack < 0 =
-        planet {planetShips = -shipsAfterAttack, planetOwner = owner fleet}
-    -- Attack failed
-    | otherwise = planet {planetShips = shipsAfterAttack}
-  where
-    shipsAfterAttack = planetShips planet - fleetShips fleet
-
--- | Apply all fleets in the list to all planets
---
-engageAll :: IntMap Planet -> [Fleet] -> IntMap Planet
-engageAll planets fleets = foldl engage' planets fleets
-  where
-    engage' planets' fleet = IM.update (return . flip engage fleet)
-                                       (fleetDestination fleet)
-                                       planets'
 
 -- | Find the distance between two planets
 --
