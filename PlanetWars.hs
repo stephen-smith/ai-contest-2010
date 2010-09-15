@@ -46,11 +46,12 @@ module PlanetWars
     , unique
     ) where
 
-import Control.Applicative ((<$>))
-import Data.List (intercalate, isPrefixOf, partition, foldl')
+import Control.Applicative ((<$>), (<*>))
+import Data.List (intercalate, isPrefixOf, partition, foldl', sortBy)
 import Data.Maybe (fromJust)
 import Data.Monoid (Monoid, mempty, mappend)
 import Data.IntMap (IntMap)
+import Data.Ord (comparing)
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 import System.IO
@@ -187,6 +188,8 @@ departure ordersMap gs = ( droppedPlayers, gs' )
                            | otherwise = (p:ps, dropPlayer p lgs)
       where
         (valid, lgs') = f lgs
+
+    -- Remove a player from the game.
     dropPlayer player lgs =
         lgs { gameStatePlanets = IM.map setNeutral $ gameStatePlanets lgs
             , gameStateFleets  = filter ((/= player) . fleetOwner)
@@ -196,23 +199,30 @@ departure ordersMap gs = ( droppedPlayers, gs' )
         setNeutral planet = if planetOwner planet == player
             then planet { planetOwner = 0 }
             else planet
+
+    -- Spawn fleets based on orders from a single player
     doOrders _     [] lgs = ( True, lgs )
     doOrders p (o:os) lgs = ( headValid && tailValid, lgs'' )
       where
         ( headValid, lgs' ) = doOrder p o lgs
         ( tailValid, lgs'' ) = doOrders p os lgs'
+
+    -- Spawn a fleet based on a single order from a single player
     doOrder p o lgs = ( valid, lgs' )
       where
         sourceId = orderSource o
         sourcePlanet = planetById lgs sourceId
+        sourceOwner = planetOwner sourcePlanet
         sourceShips = planetShips sourcePlanet
         movingShips = orderShips o
         destinationId = orderDestination o
         tripLength = ceiling
                    $ distanceBetween sourcePlanet (planetById lgs destinationId)
-        valid = sourceId == p
+        valid = planetOwner sourcePlanet == p
+              && sourceId /= destinationId
               && sourceShips >= movingShips
         lgs' = if valid
+                  && movingShips > 0 -- Ignore size 0 fleets for now
             then lgs { gameStatePlanets =
                            IM.singleton sourceId sourcePlanet
                                { planetShips = sourceShips - movingShips
@@ -221,7 +231,7 @@ departure ordersMap gs = ( droppedPlayers, gs' )
                            { fleetOwner = p
                            , fleetShips = movingShips
                            , fleetSource = sourceId
-                           , fleetDestination = orderDestination o
+                           , fleetDestination = destinationId
                            , fleetTripLength = tripLength
                            , fleetTurnsRemaining = tripLength
                            } : gameStateFleets lgs
@@ -238,9 +248,11 @@ departureNoFailReport = (snd <$>) <$> departure
 
 -- | Perform the 'Departure' phase of game state update with no orders
 --
-departureNoOrders :: GameState -- ^ Old game state
-                  -> GameState -- ^ New game state
-departureNoOrders = departureNoFailReport IM.empty
+departureNoOrders = departure IM.empty
+
+simpleDeparture :: GameState -- ^ Old game state
+                -> GameState -- ^ New game state
+simpleDeparture = departureNoFailReport IM.empty
 
 -- | Perform the 'Advancement' phase of game state update
 --
@@ -255,6 +267,114 @@ advancement gs = gs { gameStatePlanets = IM.map advancePlanet
                     | otherwise   = p { planetShips = planetShips p
                                                     + planetGrowthRate p }
     advanceFleet f = f { fleetTurnsRemaining = fleetTurnsRemaining f - 1 }
+
+-- | Perform the 'Arrival' phase of game state update
+--
+arrival :: GameState -- ^ Old game state
+        -> GameState -- ^ New game state
+arrival gs = gs { gameStatePlanets =
+                      IM.map (uncurry resolveCombat) planetsAndForces
+                , gameStateFleets  = remainingFleets
+                }
+  where
+    -- Make a fleet representing the defence forces on a planet.
+    planetsAndFleets = IM.map ((,) <$> id <*> (IM.singleton <$> planetOwner
+                                                            <*> planetShips))
+                     $ gameStatePlanets gs
+
+    -- Pull out arriving fleets for processing leaving fleets still in
+    -- transit for later.
+    (arrivingFleets, remainingFleets) = partition ((== 0) . fleetTurnsRemaining)
+                                      $ gameStateFleets gs
+
+    -- Make forces that are the sum of fleets arriving
+    fleetForces = IM.unionsWith (IM.unionWith (+))
+                $ map fleetForce arrivingFleets
+    fleetForce = IM.singleton <$> fleetDestination
+               <*> (IM.singleton <$> fleetOwner <*> fleetShips)
+
+    -- Combine the planet fleets with the other fleets at that planet
+    planetsAndForces = IM.map (IM.assocs <$>)
+                     $ IM.intersectionWith combine planetsAndFleets fleetForces
+      where
+        combine (planet, fleet) forces = ( planet
+                                         , IM.unionWith (+) fleet forces
+                                         )
+
+    -- Resolve a combat at a planet with 0 or more forces
+    resolveCombat p       [] = p -- This should not happen.
+    resolveCombat p [(o, s)] = p { planetOwner = o, planetShips = s }
+    resolveCombat p   forces | ships > 0 = p { planetOwner = fst bigWinner
+                                             , planetShips = ships
+                                             }
+                             | otherwise = p { planetShips = ships }
+      where
+        (bigWinner:bigLoser:_) = sortBy (comparing snd) forces
+        ships = snd bigWinner - snd bigLoser
+
+-- | Do a full game state update based on the orders received
+--
+engineTurn :: IntMap [Order] -- ^ Orders grouped by issuing player
+           -> GameState      -- ^ Old game state
+           -> ( ( Bool       -- ^ Game over?
+                , Maybe Int  -- ^ Winner, if there is one
+                , [Int]      -- ^ Players that lost this turn
+                )
+              , GameState    -- ^ New game state
+              )
+engineTurn ordersMap gs = ( ( gameOver, winner , dropped ++ losers), gs' )
+  where
+    -- Departure phase
+    (dropped, gs'') = departure ordersMap gs
+
+    -- Who is left after that?
+    planetPlayers' = IM.elems $ IM.map (IS.singleton <$> planetOwner)
+                  $ gameStatePlanets gs''
+    fleetPlayers' = map (IS.singleton <$> fleetOwner) $ gameStateFleets gs''
+    notDroppedPlayers = IS.unions $ planetPlayers' ++ fleetPlayers'
+
+    -- Advancement and arrival phases
+    gs' = advancement $ arrival gs''
+
+    -- Who is left after that?
+    planetPlayers = IM.elems $ IM.map (IS.singleton <$> planetOwner)
+                  $ gameStatePlanets gs'
+    fleetPlayers = map (IS.singleton <$> fleetOwner) $ gameStateFleets gs'
+    remainingPlayers = IS.unions $ planetPlayers ++ fleetPlayers
+
+    -- Find the losers
+    losers = IS.elems $ IS.difference remainingPlayers notDroppedPlayers
+
+    -- Find the winner and end the game
+    countRemaining = IS.size remainingPlayers
+    gameOver = countRemaining < 2
+    winner | countRemaining == 1 = Just $ head $ IS.elems remainingPlayers
+           | otherwise           = Nothing
+
+-- | Do a full game state update, but don't report game over, winner, or losers
+--
+engineTurnNoReport :: IntMap [Order] -- ^ Orders groups by issuing players
+                   -> GameState      -- ^ Old game state
+                   -> GameState      -- ^ New game state
+engineTurnNoReport = ((arrival . advancement) .) <$> departureNoFailReport
+
+-- | Do a full game state update as if no players gave any orders
+--
+engineTurnNoOrders :: GameState     -- ^ Old game state
+                   -> ( ( Bool      -- ^ Game Over?
+                        , Maybe Int -- ^ Winner, if there is one.
+                        , [Int]     -- ^ Players that lost this turn
+                        )
+                      , GameState   -- ^ New game state
+                      )
+engineTurnNoOrders = engineTurn IM.empty
+
+-- | Do a full game state update as if no players gave any orders but don't
+-- | report game over, winner, or losers
+--
+simpleEngineTurn :: GameState -- ^ Old game state
+                 -> GameState -- ^ New game state
+simpleEngineTurn = engineTurnNoReport IM.empty
 
 -- | Add (or subtract) a number of ships to (or from) a planet
 --
