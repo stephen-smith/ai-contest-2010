@@ -173,6 +173,7 @@ isNeutral :: Resource r => r -> Bool
 isNeutral = (<= 0) . owner
 
 -- | Perform the 'Departure' phase of game state update
+--
 departure :: IntMap [Order] -- ^ Orders, grouped by issuing player
           -> GameState      -- ^ Old game state
           -> ( [Int]        -- ^ Players that gave an invalid order
@@ -226,6 +227,34 @@ departure ordersMap gs = ( droppedPlayers, gs' )
                            } : gameStateFleets lgs
                      }
             else lgs
+
+-- | Perform the 'Departure' phase, but do not report what players are
+-- | dropped.  Those players are still dropped, it just isn't reported.
+--
+departureNoFailReport :: IntMap [Order] -- ^ Orders, grouped by issuing player
+                      -> GameState      -- ^ Old game state
+                      -> GameState      -- ^ New game state
+departureNoFailReport = (snd <$>) <$> departure
+
+-- | Perform the 'Departure' phase of game state update with no orders
+--
+departureNoOrders :: GameState -- ^ Old game state
+                  -> GameState -- ^ New game state
+departureNoOrders = departureNoFailReport IM.empty
+
+-- | Perform the 'Advancement' phase of game state update
+--
+advancement :: GameState -- ^ Old game state
+            -> GameState -- ^ New game state
+advancement gs = gs { gameStatePlanets = IM.map advancePlanet
+                                       $ gameStatePlanets gs
+                    , gameStateFleets = map advanceFleet $ gameStateFleets gs
+                    }
+  where
+    advancePlanet p | isNeutral p = p
+                    | otherwise   = p { planetShips = planetShips p
+                                                    + planetGrowthRate p }
+    advanceFleet f = f { fleetTurnsRemaining = fleetTurnsRemaining f - 1 }
 
 -- | Add (or subtract) a number of ships to (or from) a planet
 --
