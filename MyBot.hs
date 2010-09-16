@@ -32,6 +32,7 @@ reduceOrders xs = concat $ IM.elems $ IM.map IM.elems orderMap
     shipsMap = IM.unionsWith (IM.unionWith (+)) $ map shipMap xs
     shipMap o = IM.singleton (orderSource o)
                $ IM.singleton (orderDestination o) (orderShips o)
+
 doTurn :: GameState  -- ^ Game state
        -> [Order]    -- ^ Orders
 doTurn state = if IM.null myPlanets
@@ -40,6 +41,10 @@ doTurn state = if IM.null myPlanets
     -- If we have a fleet in flight, just do nothing
     else reduceOrders $ attackOrders myPlanets targets
   where
+    now:future = iterate simpleEngineTurn state
+    reasonableFuture = now:takeWhile (not . null . gameStateFleets) future
+    stateByTime = IM.unions $ zipWith IM.singleton [0..] reasonableFuture
+
     (myFleets, enemyFleets) = partition isAllied $ gameStateFleets state
 
     -- Partition all planets
