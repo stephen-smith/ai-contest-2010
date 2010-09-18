@@ -241,14 +241,21 @@ doTurn state = if IM.null myPlanets
 
         -- Calculate the first set of orders
         order p = orderViaWaypoints (planetId p) (planetId $ fst target) (fleetSize p)
-        all_orders = map order localPlanets
-        srcNotEqualDest = (/=) <$> orderSource <*> orderDestination
         positiveFleetSize = (> 0) . orderShips
-        valid = (&&) <$> positiveFleetSize <*> srcNotEqualDest
-        orders = filter valid all_orders
+        all_orders = filter positiveFleetSize $ map order localPlanets
+        srcNotEqualDest = (/=) <$> orderSource <*> orderDestination
+        (orders, reserve) = partition srcNotEqualDest all_orders
+
+        -- Modify game state to account for reserved forces
+        planetReserve o = (s, p { planetShips = planetShips p - orderShips o })
+          where
+            s = orderSource o
+            p = planetById gs s
+        gs' = gs { gameStatePlanets = (IM.fromList $ map planetReserve reserve)
+                                    `IM.union` gameStatePlanets gs }
 
         -- Partially advance game gs for future calculations
-        next = departureNoFailReport (IM.singleton 1 orders) gs
+        next = departureNoFailReport (IM.singleton 1 orders) gs'
 
 main :: IO ()
 main = bot doTurn
