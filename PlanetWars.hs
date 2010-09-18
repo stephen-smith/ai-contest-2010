@@ -39,6 +39,10 @@ module PlanetWars
     , debugBot
 
       -- ^ Engine / Simulation
+    , departureNoFailReport
+    , simpleDeparture
+    , advancement
+    , arrival
     , engineTurn
     , engineTurnNoReport
     , engineTurnNoOrders
@@ -284,6 +288,7 @@ arrival :: GameState -- ^ Old game state
         -> GameState -- ^ New game state
 arrival gs = gs { gameStatePlanets =
                       IM.map (uncurry resolveCombat) planetsAndForces
+                      `IM.union` gameStatePlanets gs
                 , gameStateFleets  = remainingFleets
                 }
   where
