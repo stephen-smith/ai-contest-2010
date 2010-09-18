@@ -204,7 +204,7 @@ doTurn state = if IM.null myPlanets
         -- Target the "best" planet that we have enough ships to take.
         targets = sortBy (comparing value) $ filter ((> 0) . snd .snd) $ concat
                 $ IM.elems $ IM.mapWithKey extendGameState stateByTime
-        tooHard (p, (t, s)) = (if isAllied p
+        tooHard (p, (t, s)) = (if isAllied $ planetById gs $ planetId p
             then s > defence
             else s > attack) || s > shipsInRange
           where
@@ -235,7 +235,7 @@ doTurn state = if IM.null myPlanets
 
         -- Remaining forces
         defence' = max 0 $ defence - totalFleetSize
-        attack' = max 0 $ if isAllied $ fst target
+        attack' = max 0 $ if isAllied $ planetById gs $ planetId $ fst target
             then attack
             else attack - totalFleetSize
 
