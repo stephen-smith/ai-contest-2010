@@ -6,8 +6,9 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Monad (forM_)
 
 import Data.Function (on)
-import Data.List (partition, sortBy, groupBy, maximumBy)
+import Data.List (foldl', partition, sortBy, groupBy, maximumBy)
 import qualified Data.IntMap as IM
+import Data.IntMap (IntMap)
 import Data.Ratio ((%), numerator, denominator)
 import Data.Ord (comparing)
 
@@ -48,9 +49,15 @@ doTurn state = if IM.null myPlanets
     then []
     -- If we have a fleet in flight, just do nothing
     else let
-        (attacks, state') = attackOrders myPlanetShips attackersAvailable state
+        (attacks, (_, _, state')) = attackOrders (defenceShips, attackShips, state)
         fleeing = fleeOrders state'
-    in reduceOrders $ attacks ++ fleeing
+    in{- System.IO.Unsafe.unsafePerformIO $ do
+        putStrLn $ show need
+        putStrLn $ show greed
+        putStrLn $ show aggressiveness
+        putStrLn $ show totalAttackers
+        putStrLn $ show attackersAvailable
+        return $ -}reduceOrders $ attacks ++ fleeing
   where
     (myFleets, enemyFleets) = partition isAllied $ gameStateFleets state
     (supportFleets, attackFleets) = partition isSupportFleet myFleets
@@ -106,10 +113,13 @@ doTurn state = if IM.null myPlanets
         rationalToDouble = (/) <$> (fromIntegral . numerator)
                                <*> (fromIntegral . denominator)
 
-    -- Determine the most ships to send attacking
+    -- Determine how to allocate ships
+    defenceShips = IM.filter (/= 0) $ IM.map planetShips myPlanets
     currentAttackers = sum $ map fleetShips attackFleets
-    totalAttackers = ceiling $ fromIntegral myPlanetShips * aggressiveness
+    totalAttackers = ceiling $ fromIntegral myPlanetShips * max 1 aggressiveness
     attackersAvailable = totalAttackers - currentAttackers
+    defenceToAttack = (`divCeil` myPlanetShips) . (* attackersAvailable)
+    attackShips = IM.map defenceToAttack defenceShips
 
     -- Calculate way-points
     waypoints = IM.mapWithKey oneToMany planetsMap
@@ -150,112 +160,125 @@ doTurn state = if IM.null myPlanets
         growthFactor = if isNeutral p
             then 1
             else 2
-        growthTime = if maxTransitTime < t
-            then 0
-            else maxTransitTime - t
+        growthTime = max 0 $ maxTransitTime - t
 
+    fleeOrders :: GameState -- ^ Current game state
+               -> [Order]   -- ^ Proposed flights
     fleeOrders gs | myShips > theirShips = []
                   | IM.null keptPlanets  = []
-                  | otherwise            = orders
+                  | otherwise            = flee =<< IM.elems lostPlanets
       where
-        next = simpleEngineTurn gs
         myPlanetsNow = IM.filter isAllied $ gameStatePlanets gs
+
+        next = simpleEngineTurn gs
         theirPlanetsSoon = IM.filter isHostile $ gameStatePlanets next
-        lostPlanets = IM.intersection myPlanetsNow theirPlanetsSoon
-        keptPlanets = IM.difference myPlanetsNow theirPlanetsSoon
-        orders = concat $ map planetOrders $ IM.elems lostPlanets
-        planetOrders p = zipWith (Order sourceId) (map planetId destinations)
-                       $ planetShips p `pidgeonhole` length destinations
+
+        lost k _ = k `IM.member` theirPlanetsSoon
+        (lostPlanets, keptPlanets) = IM.partitionWithKey lost myPlanetsNow
+
+        flee p = zipWith (Order sourceId) (map planetId destinations)
+               $ planetShips p `pidgeonhole` length destinations
           where
             sourceId = planetId p
             planetsWithDistance = map ((,) <$> id
                                            <*> (distanceById sourceId . planetId))
-                                $ IM.elems $ IM.delete sourceId keptPlanets
+                                $ IM.elems keptPlanets
             destinations = sortBy (comparing planetShips) $ map fst $ head
                          $ groupBy ((==) `on` snd)
                          $ sortBy (comparing snd) planetsWithDistance
 
-    attackOrders :: Int -> Int -> GameState -> ([Order], GameState)
-    attackOrders       0      _ gs = ([], gs)
-    attackOrders defence attack gs
-      | null easyTargets  ={- System.IO.Unsafe.unsafePerformIO $ do
-        putStrLn $ show defence
-        putStrLn $ show attack
-        forM_ (map ((,) <$> (planetId . fst) <*> snd) targets) $ \t -> do
-            putStrLn $ show t
-        return $ -}([], gs)
+    attackOrders :: ( IntMap Int   -- ^ Ships available for defence by planet id
+                    , IntMap Int   -- ^ Ships available for attack by planet id
+                    , GameState    -- ^ Old game state
+                    )
+                 -> ( [Order]      -- ^ Proposed deployments
+                    , ( IntMap Int -- ^ Ships available for defence by planet id
+                      , IntMap Int -- ^ Ships available for attack by planet id
+                      , GameState  -- ^ New game state
+                      )
+                    )
+    attackOrders (defence, attack, gs)
+      | IM.null defence = ([], (defence, attack, gs))
+      | null easyTargets  = System.IO.Unsafe.unsafePerformIO $ do
+        putStrLn $ IM.showTree defence
+        putStrLn $ IM.showTree attack
+        forM_ hardTargets $ \(p, (t, s)) -> do
+            putStrLn $ show (planetId p, t, s)
+        return $ ([], (defence, attack, gs))
       | otherwise         = let
-        (more, final) = attackOrders defence' attack' next
-      in{- System.IO.Unsafe.unsafePerformIO $ do 
-        putStrLn $ show defence
-        putStrLn $ show attack
+        (more, (defence'', attack'', final)) = attackOrders (defence', attack', next)
+      in System.IO.Unsafe.unsafePerformIO $ do 
+        putStrLn $ IM.showTree defence
+        putStrLn $ IM.showTree attack
+        forM_ hardTargets $ \(p, (t, s)) -> do
+            putStrLn $ show (planetId p, t, s)
         putStrLn $ show (planetId $ fst target, snd target)
-        putStrLn $ show (targetFleetSize, totalFleetSize)
         forM_ all_orders $ \o -> do
             putStrLn $ show o
-        return $ -}(orders ++ more, final)
+        return $ (orders ++ more, (defence'', attack'', final))
       where
-        mpl = filter isAllied $ IM.elems $ gameStatePlanets gs
-
-        -- Predict the future given current gs
+        -- Predict the future given current game state
         future = iterate simpleEngineTurn gs
         stateByTime = IM.fromList $ zip [0..maxTransitTime] future
+
+        -- Determine how to allocate ships
+        isAlliedNow = isAllied . planetById gs . planetId
+        shipSources p = if isAlliedNow p then defence else attack
 
         -- Target the "best" planet that we have enough ships to take.
         targets = sortBy (comparing value) $ filter ((> 0) . snd .snd) $ concat
                 $ IM.elems $ IM.mapWithKey extendGameState stateByTime
-        tooHard (p, (t, s)) = (if isAllied $ planetById gs $ planetId p
-            then s > defence
-            else s > attack) || s > shipsInRange
+        tooHard (p, (t, s)) = s > shipsInRange
           where
-            shipsInRange = sum $ map planetShips $ filter ((<= t) . distance p) mpl
-        (_, easyTargets) = splitWhile tooHard targets
+            shipsInRange = sum $ IM.elems
+                         $ IM.filterWithKey inRange
+                         $ shipSources p
+            inRange pid _ = distanceById (planetId p) pid <= t
+        (hardTargets, easyTargets) = splitWhile tooHard targets
         (target:_) = easyTargets
 
         -- Send at least enough ships to conquer it.
         targetFleetSize = (snd $ snd target)
+        targetPlanet = fst target
+        targetSources = shipSources targetPlanet
+        distTarget = distanceById $ planetId targetPlanet
 
         -- Send from close planets, first
-        (localShips, localPlanets) = close $ groupBy ((==) `on` distTarget)
-                                           $ sortBy (comparing distTarget)
-                                           $ mpl
+        (localShips, localPids) = close $ groupBy ((==) `on` dist)
+                                $ sortBy (comparing dist)
+                                $ IM.assocs targetSources
           where
-            distTarget = distance (fst target)
+            dist = distTarget . fst
             close = close' 0 []
             close' have chosen     [] = (have, chosen)
             close' have chosen (x:xs)
               | targetFleetSize <= have = (have, chosen)
-              | otherwise              = close' (have + got) (chosen ++ x) xs
+              | otherwise               = close' (have + got) (chosen ++ from) xs
               where
-                got = sum $ map planetShips x
+                got = sum $ map snd x
+                from = map fst x
 
         -- Per-planet fleet size
-        fleetSize p = (targetFleetSize * planetShips p) `divCeil` localShips
-        totalFleetSize = sum $ map fleetSize localPlanets
-
-        -- Remaining forces
-        defence' = max 0 $ defence - totalFleetSize
-        attack' = max 0 $ if isAllied $ planetById gs $ planetId $ fst target
-            then attack
-            else attack - totalFleetSize
+        fleetSize = (`divCeil` localShips) . (* targetFleetSize)
+                  . ((IM.!) targetSources)
+        totalFleetSize = sum $ map fleetSize localPids
 
         -- Calculate the first set of orders
-        order p = orderViaWaypoints (planetId p) (planetId $ fst target) (fleetSize p)
+        order pid = orderViaWaypoints pid (planetId targetPlanet) (fleetSize pid)
         positiveFleetSize = (> 0) . orderShips
-        all_orders = filter positiveFleetSize $ map order localPlanets
+        all_orders = filter positiveFleetSize $ map order localPids
         srcNotEqualDest = (/=) <$> orderSource <*> orderDestination
-        (orders, reserve) = partition srcNotEqualDest all_orders
+        (orders, _) = partition srcNotEqualDest all_orders
 
-        -- Modify game state to account for reserved forces
-        planetReserve o = (s, p { planetShips = planetShips p - orderShips o })
-          where
-            s = orderSource o
-            p = planetById gs s
-        gs' = gs { gameStatePlanets = (IM.fromList $ map planetReserve reserve)
-                                    `IM.union` gameStatePlanets gs }
+        -- Modify available ships to account for reserved forces
+        reserve ships o = IM.adjust (subtract $ orderShips o) (orderSource o) ships
+        defence' = IM.filter (/= 0) $ foldl' reserve defence all_orders
+        attack' = if isAlliedNow targetPlanet
+            then attack
+            else IM.filter (/= 0) $ foldl' reserve attack all_orders
 
         -- Partially advance game gs for future calculations
-        next = departureNoFailReport (IM.singleton 1 orders) gs'
+        next = departureNoFailReport (IM.singleton 1 orders) gs
 
 main :: IO ()
 main = bot doTurn
