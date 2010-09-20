@@ -3,7 +3,7 @@
 module Main where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (forM_)
+import Control.Monad (forM_, unless)
 
 import Data.Function (on)
 import Data.List (foldl', partition, sortBy, groupBy, maximumBy)
@@ -124,11 +124,12 @@ doTurn state = if IM.null myPlanets
     -- Calculate way-points
     waypoints = IM.mapWithKey oneToMany planetsMap
       where
-        oneToMany pid _ = IM.mapWithKey (allWaypoints pid) planetsMap
-        allWaypoints pid qid _ = IM.elems $ IM.filterWithKey isWaypoint planetsMap
+        oneToMany pid = const $ IM.mapWithKey (allWaypoints pid) planetsMap
+        allWaypoints pid qid = const $ IM.elems
+                             $ IM.filterWithKey isWaypoint planetsMap
           where
             dz = distanceById pid qid
-            isWaypoint rid _ = pid /= rid && rid /= qid && dx + dy <= dz
+            isWaypoint rid = const $ pid /= rid && rid /= qid && dx + dy <= dz
               where
                 dx = distanceById pid rid
                 dy = distanceById rid qid
@@ -199,15 +200,15 @@ doTurn state = if IM.null myPlanets
                     )
     attackOrders (defence, attack, gs)
       | IM.null defence = ([], (defence, attack, gs))
-      | null easyTargets  = System.IO.Unsafe.unsafePerformIO $ do
-        putStrLn $ IM.showTree defence
+      | null easyTargets  ={- System.IO.Unsafe.unsafePerformIO $ do
+        putStrLn . show $ IM.size defence
         putStrLn $ IM.showTree attack
         forM_ hardTargets $ \(p, (t, s)) -> do
             putStrLn $ show (planetId p, t, s)
-        return $ ([], (defence, attack, gs))
+        return $ -}([], (defence, attack, gs))
       | otherwise         = let
         (more, (defence'', attack'', final)) = attackOrders (defence', attack', next)
-      in System.IO.Unsafe.unsafePerformIO $ do 
+      in{- System.IO.Unsafe.unsafePerformIO $ do 
         putStrLn $ IM.showTree defence
         putStrLn $ IM.showTree attack
         forM_ hardTargets $ \(p, (t, s)) -> do
@@ -215,14 +216,15 @@ doTurn state = if IM.null myPlanets
         putStrLn $ show (planetId $ fst target, snd target)
         forM_ all_orders $ \o -> do
             putStrLn $ show o
-        return $ (orders ++ more, (defence'', attack'', final))
+        return $ -}(orders ++ more, (defence'', attack'', final))
       where
         -- Predict the future given current game state
         future = iterate simpleEngineTurn gs
         stateByTime = IM.fromList $ zip [0..maxTransitTime] future
 
         -- Determine how to allocate ships
-        isAlliedNow = isAllied . planetById gs . planetId
+        isAlliedById = isAllied . planetById gs
+        isAlliedNow = isAlliedById . planetId
         shipSources p = if isAlliedNow p then defence else attack
 
         -- Target the "best" planet that we have enough ships to take.
@@ -272,10 +274,11 @@ doTurn state = if IM.null myPlanets
 
         -- Modify available ships to account for reserved forces
         reserve ships o = IM.adjust (subtract $ orderShips o) (orderSource o) ships
+        reserveAttacks ships o = if isAlliedById $ orderDestination o
+           then ships
+           else reserve ships o
         defence' = IM.filter (/= 0) $ foldl' reserve defence all_orders
-        attack' = if isAlliedNow targetPlanet
-            then attack
-            else IM.filter (/= 0) $ foldl' reserve attack all_orders
+        attack' = IM.filter (/= 0) $ foldl' reserveAttacks attack all_orders
 
         -- Partially advance game gs for future calculations
         next = departureNoFailReport (IM.singleton 1 orders) gs
