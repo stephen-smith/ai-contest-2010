@@ -3,16 +3,14 @@
 module Main where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (forM_, unless)
+-- import Control.Monad (forM_, unless)
 
 import Data.Function (on)
-import Data.List (foldl', partition, sortBy, groupBy, maximumBy)
+import Data.List (partition, sortBy, groupBy, maximumBy)
 import qualified Data.IntMap as IM
-import Data.IntMap (IntMap)
-import Data.Ratio ((%), numerator, denominator)
 import Data.Ord (comparing)
 
-import qualified System.IO.Unsafe (unsafePerformIO)
+-- import qualified System.IO.Unsafe (unsafePerformIO)
 
 import PlanetWars
 
@@ -47,22 +45,13 @@ doTurn :: GameState  -- ^ Game state
 doTurn state = if IM.null myPlanets
     -- No valid orders
     then []
-    -- If we have a fleet in flight, just do nothing
     else let
         (attacks, state') = attackOrders state
         fleeing = fleeOrders state'
     in{- System.IO.Unsafe.unsafePerformIO $ do
-        putStrLn $ show need
-        putStrLn $ show greed
-        putStrLn $ show aggressiveness
-        putStrLn $ show totalAttackers
-        putStrLn $ show attackersAvailable
         return $ -}reduceOrders $ attacks ++ fleeing
   where
     (myFleets, enemyFleets) = partition isAllied $ gameStateFleets state
-    (supportFleets, attackFleets) = partition isSupportFleet myFleets
-      where
-        isSupportFleet = isAllied . planetById state . fleetDestination
 
     planetsMap = gameStatePlanets state
 
@@ -74,7 +63,6 @@ doTurn state = if IM.null myPlanets
         turnsBetween p q = ceiling $ distanceBetween p q
 
     distanceById x y = (distances IM.! x) IM.! y
-    distance p q = distanceById (planetId p) (planetId q)
 
     planetIds = IM.keys planetsMap
     maxTransitTime = maximum (distanceById <$> planetIds <*> planetIds)
@@ -93,33 +81,6 @@ doTurn state = if IM.null myPlanets
       where
         [myFleetShips, theirFleetShips] =
             map (sum . map fleetShips) [myFleets, enemyFleets]
-
-    -- Count production totals
-    (myProduction, theirProduction) = IM.fold accum (0, 0) planetsMap
-      where
-        accum p (n, m) | isHostile p = (n, m + planetGrowthRate p)
-                       | isAllied  p = (n + planetGrowthRate p, m)
-                       | otherwise   = (n, m)
-
-    -- Adjust the number of ships on aggressive manuvers
-    need :: Rational -- Ranges over [0, 1]
-    need = fromIntegral theirProduction
-         % fromIntegral (theirProduction + myProduction)
-    greed :: Rational -- Ranges over [0, 1]
-    greed = fromIntegral myShips % fromIntegral (theirShips + myShips)
-    aggressiveness = sqrt . rationalToDouble $ need * greed -- Ranges over [0, 1]
-      where
-        rationalToDouble :: Rational -> Double
-        rationalToDouble = (/) <$> (fromIntegral . numerator)
-                               <*> (fromIntegral . denominator)
-
-    -- Determine how to allocate ships
-    defenceShips = IM.filter (/= 0) $ IM.map planetShips myPlanets
-    currentAttackers = sum $ map fleetShips attackFleets
-    totalAttackers = ceiling $ fromIntegral myPlanetShips * max 1 aggressiveness
-    attackersAvailable = totalAttackers - currentAttackers
-    defenceToAttack = (`divCeil` myPlanetShips) . (* attackersAvailable)
-    attackShips = IM.map defenceToAttack defenceShips
 
     -- Calculate way-points
     waypoints = IM.mapWithKey oneToMany planetsMap
@@ -194,17 +155,13 @@ doTurn state = if IM.null myPlanets
                     )
     attackOrders gs
       | IM.null availableShips = ([], gs)
-      | null easyTargets  ={- System.IO.Unsafe.unsafePerformIO $ do
-        putStrLn . show $ IM.size defence
-        putStrLn $ IM.showTree attack
+      | null targets  ={- System.IO.Unsafe.unsafePerformIO $ do
         forM_ hardTargets $ \(p, (t, s)) -> do
             putStrLn $ show (planetId p, t, s)
         return $ -}([], gs)
       | otherwise         = let
         (more, final) = attackOrders next
       in{- System.IO.Unsafe.unsafePerformIO $ do 
-        putStrLn $ IM.showTree defence
-        putStrLn $ IM.showTree attack
         forM_ hardTargets $ \(p, (t, s)) -> do
             putStrLn $ show (planetId p, t, s)
         putStrLn $ show (planetId $ fst target, snd target)
@@ -220,12 +177,9 @@ doTurn state = if IM.null myPlanets
         availableShips = IM.filter (/= 0) $ IM.unionsWith min $ IM.elems
                        $ IM.map (IM.map alliedShips . gameStatePlanets) stateByTime
 
-        -- Determine how to allocate ships
-        isAlliedById = isAllied . planetById gs
-        isAlliedNow = isAlliedById . planetId
-
         -- Target the "best" planet that we have enough ships to take.
-        targets = sortBy (comparing value) $ filter ((> 0) . snd .snd) $ concat
+        targets = sortBy (comparing value) $ filter (not . tooHard)
+                $ filter ((> 0) . snd .snd) $ concat
                 $ IM.elems $ IM.mapWithKey extendGameState stateByTime
         tooHard (p, (t, s)) = s > shipsInRange
           where
@@ -233,8 +187,7 @@ doTurn state = if IM.null myPlanets
                          $ IM.filterWithKey inRange
                          $ availableShips
             inRange pid = const $ distanceById (planetId p) pid <= t
-        (_, easyTargets) = splitWhile tooHard targets
-        (target:_) = easyTargets
+        (target:_) = targets
 
         -- Send at least enough ships to conquer it.
         targetFleetSize = (snd $ snd target)
@@ -259,7 +212,6 @@ doTurn state = if IM.null myPlanets
         -- Per-planet fleet size
         fleetSize = (`divCeil` localShips) . (* targetFleetSize)
                   . ((IM.!) availableShips)
-        totalFleetSize = sum $ map fleetSize localPids
 
         -- Calculate the first set of orders
         order pid = orderViaWaypoints pid (planetId targetPlanet) (fleetSize pid)
