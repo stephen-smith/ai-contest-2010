@@ -11,7 +11,24 @@ import qualified Data.IntMap as IM
 import Data.IntMap (IntMap)
 import Data.Ord (comparing)
 
+import System.IO (Handle, IOMode(WriteMode), hFlush, hPutStrLn, openFile)
+import qualified System.IO.Unsafe (unsafePerformIO)
+
 import PlanetWars
+
+logFile :: FilePath
+logFile = "MyBot.log"
+
+{-# NOINLINE logHandle #-}
+logHandle :: Handle
+logHandle = System.IO.Unsafe.unsafePerformIO $ openFile logFile WriteMode
+
+{-# NOINLINE myTrace #-}
+myTrace :: String -> a -> a
+myTrace s v = System.IO.Unsafe.unsafePerformIO $ do
+    hPutStrLn logHandle s
+    hFlush logHandle
+    return v
 
 -- | Divide, rounding up, without using floating point
 --
@@ -82,6 +99,7 @@ shipsAvailableAlways = IM.filter (/= 0) . IM.unionsWith min . IM.elems
 
 doTurn :: GameState  -- ^ Game state
        -> [Order]    -- ^ Orders
+doTurn _ | myTrace "-- TURN --" False = undefined
 doTurn state = if IM.null myPlanets
     -- No valid orders
     then []
@@ -139,15 +157,18 @@ doTurn state = if IM.null myPlanets
     -- Use friendly way-points.
     orderViaWaypoints s d z = if null wps
         then Order s d z
-        else Order s wp z
+        else myTrace ("Using waypoint: " ++ show s ++ " -> " ++ show wp ++ " -> " ++ show d) $ Order s wp z
       where
         wps = filter isAllied $ (waypoints IM.! s) IM.! d
         wp = maximumBy (comparing $ distanceById s) $ map planetId wps
 
     fleeOrders :: GameState -- ^ Current game state
                -> [Order]   -- ^ Proposed flights
-    fleeOrders gs | myShips > theirShips = []
-                  | otherwise            = flee =<< IM.elems lostPlanets
+    fleeOrders gs | myShips > theirShips = myTrace ("Not fleeing: " ++ show myShips ++ " > " ++ show theirShips) $ []
+                  | IM.null lostPlanets  = myTrace ("Not fleeing: lost planets = " ++ show (IM.size lostPlanets)) $ []
+                  | otherwise            = let
+        results = flee =<< IM.elems lostPlanets
+      in myTrace ("Fleeing!  " ++ show results) $ results
       where
         stateByTime = futureByTime maxTransitTime gs
         scheduleLimit = endOfTime stateByTime
