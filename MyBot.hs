@@ -6,7 +6,7 @@ import Control.Applicative ((<$>), (<*>))
 -- import Control.Monad (forM_, unless)
 
 import Data.Function (on)
-import Data.List (partition, sortBy, groupBy, maximumBy)
+import Data.List (foldl', partition, sortBy, groupBy, maximumBy, minimumBy)
 import qualified Data.IntMap as IM
 import Data.IntMap (IntMap)
 import Data.Ord (comparing)
@@ -131,7 +131,7 @@ doTurn state = if IM.null myPlanets
                              $ IM.filterWithKey isWaypoint planetsMap
           where
             dz = distanceById pid qid
-            isWaypoint rid = const $ pid /= rid && rid /= qid && dx + dy <= dz
+            isWaypoint rid = const $ pid /= rid && rid /= qid && dx < dz && dy < dz
               where
                 dx = distanceById pid rid
                 dy = distanceById rid qid
@@ -142,7 +142,7 @@ doTurn state = if IM.null myPlanets
         else Order s wp z
       where
         wps = filter isAllied $ (waypoints IM.! s) IM.! d
-        wp = maximumBy (comparing $ distanceById s) $ map planetId wps
+        wp = minimumBy (comparing $ distanceById s) $ map planetId wps
 
     fleeOrders :: GameState -- ^ Current game state
                -> [Order]   -- ^ Proposed flights
