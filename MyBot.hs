@@ -210,7 +210,7 @@ doTurn state = if IM.null myPlanets
         putStrLn $ show (planetId $ fst target, snd target)
         forM_ all_orders $ \o -> do
             putStrLn $ show o
-        return $ -}(orders ++ more, final)
+        return $ -}(now_orders ++ more, final)
       where
         -- Predict the future given current game state
         future = iterate simpleEngineTurn gs
@@ -267,6 +267,7 @@ doTurn state = if IM.null myPlanets
         all_orders = filter positiveFleetSize $ map order localPids
         srcNotEqualDest = (/=) <$> orderSource <*> orderDestination
         (orders, _) = partition srcNotEqualDest all_orders
+        now_orders = filter ((== (fst $ snd target)) . distanceById (planetId targetPlanet) . orderSource) orders
 
         -- Partially advance game gs for future calculations
         next = departureNoFailReport (IM.singleton 1 orders) gs
