@@ -103,17 +103,6 @@ doTurn state = if IM.null myPlanets
         wps = filter isAllied $ (waypoints IM.! s) IM.! d
         wp = maximumBy (comparing $ distanceById s) $ map planetId wps
 
-    -- Extend the planet structure with some useful data
-    extendPlanet t p = (p, (t, shipsToConquer))
-      where
-        -- Calculate cost for the planet
-        shipsToConquer = if isAllied p
-            then 0
-            else planetShips p + 1
-    extendGameState t = IM.elems . IM.map ep . gameStatePlanets
-      where
-        ep = extendPlanet t
-
     -- Heuristic value of a planet.
     value (p, (t, s)) = (s - growth, t, s)
       where
@@ -167,11 +156,24 @@ doTurn state = if IM.null myPlanets
         putStrLn $ show (planetId $ fst target, snd target)
         forM_ all_orders $ \o -> do
             putStrLn $ show o
-        return $ -}(orders ++ more, final)
+        return $ -}(now_orders ++ more, final)
       where
         -- Predict the future given current game state
         future = iterate simpleEngineTurn gs
         stateByTime = IM.fromList $ zip [0..maxTransitTime] future
+
+        -- Extend the planet structure with some useful data
+        extendPlanet t p = (p, (t, shipsToConquer))
+          where
+            -- Calculate cost for the planet
+            shipsToConquer = if isAllied p
+                then 0
+                else if t > 0 && (isAllied $ planetById (stateByTime IM.! (t - 1)) $ planetId p)
+                then planetShips p
+                else planetShips p + 1
+        extendGameState t = IM.elems . IM.map ep . gameStatePlanets
+          where
+            ep = extendPlanet t
 
         alliedShips p = if isAllied p then planetShips p else 0
         availableShips = IM.filter (/= 0) $ IM.unionsWith min $ IM.elems
@@ -219,6 +221,7 @@ doTurn state = if IM.null myPlanets
         all_orders = filter positiveFleetSize $ map order localPids
         srcNotEqualDest = (/=) <$> orderSource <*> orderDestination
         (orders, _) = partition srcNotEqualDest all_orders
+        now_orders = filter ((== (fst $ snd target)) . distanceById (planetId targetPlanet) . orderSource) orders
 
         -- Partially advance game gs for future calculations
         next = departureNoFailReport (IM.singleton 1 orders) gs
