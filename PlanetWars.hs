@@ -324,7 +324,7 @@ arrival gs = gs { gameStatePlanets =
                                              }
                              | otherwise = p { planetShips = ships }
       where
-        (bigWinner:bigLoser:_) = sortBy (comparing snd) forces
+        (bigWinner:bigLoser:_) = sortBy (flip $ comparing snd) forces
         ships = snd bigWinner - snd bigLoser
 
 -- | Do a full game state update based on the orders received
