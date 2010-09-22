@@ -142,17 +142,6 @@ doTurn state = if IM.null myPlanets
         wps = filter isAllied $ (waypoints IM.! s) IM.! d
         wp = maximumBy (comparing $ distanceById s) $ map planetId wps
 
-    -- Extend the planet structure with some useful data
-    extendPlanet t p = (p, (t, shipsToConquer))
-      where
-        -- Calculate cost for the planet
-        shipsToConquer = if isAllied p
-            then 0
-            else planetShips p + 1
-    extendGameState t = IM.elems . IM.map ep . gameStatePlanets
-      where
-        ep = extendPlanet t
-
     -- Heuristic value of a planet.
     value (p, (t, s)) = (s - growth, t, s)
       where
@@ -215,6 +204,19 @@ doTurn state = if IM.null myPlanets
         -- Predict the future given current game state
         future = iterate simpleEngineTurn gs
         stateByTime = IM.fromList $ zip [0..maxTransitTime] future
+
+        -- Extend the planet structure with some useful data
+        extendPlanet t p = (p, (t, shipsToConquer))
+          where
+            -- Calculate cost for the planet
+            shipsToConquer = if isAllied p
+                then 0
+                else if t > 0 && (isAllied $ planetById (stateByTime IM.! (t - 1)) $ planetId p)
+                then planetShips p
+                else planetShips p + 1
+        extendGameState t = IM.elems . IM.map ep . gameStatePlanets
+          where
+            ep = extendPlanet t
 
         alliedShips p = if isAllied p then planetShips p else 0
         availableShips = IM.filter (/= 0) $ IM.unionsWith min $ IM.elems
