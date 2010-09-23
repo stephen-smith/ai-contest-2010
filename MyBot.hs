@@ -128,7 +128,7 @@ doTurn state = if IM.null myPlanets
         (lostPlanets, keptPlanets) = IM.partitionWithKey lost myPlanetsNow
 
         flee p = zipWith (Order sourceId) (map planetId destinations)
-               $ planetShips p `pidgeonhole` length destinations
+               $ filter (/= 0) $ planetShips p `pidgeonhole` length destinations
           where
             sourceId = planetId p
             planetsWithDistance = map ((,) <$> id
