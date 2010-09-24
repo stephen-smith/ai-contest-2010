@@ -29,6 +29,7 @@ module PlanetWars
     , planetsUnderAttack
     , incomingFleets
 
+    , stepAllFleets
       -- * Communication with the game engine
     , issueOrder
     , finishTurn
@@ -441,6 +442,10 @@ production g = foldl' prod (0,0) (planets g)
 --
 planetById :: GameState -> Int -> Planet
 planetById state id' = fromJust $ IM.lookup id' $ gameStatePlanets state
+
+stepAllFleets :: GameState -> GameState
+stepAllFleets state | null (gameStateFleets state) = state
+                    | otherwise = stepAllFleets $ simpleEngineTurn state
 
 -- | Aux
 partitionToIntMap :: (a -> Int) -> [a] -> IntMap [a]
