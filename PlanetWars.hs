@@ -353,9 +353,9 @@ engineTurn ordersMap gs = ( ( gameOver, winner , dropped ++ losers), gs' )
     gs' = arrival $ advancement gs''
 
     -- Who is left after that?
-    planetPlayers = IM.elems $ IM.map (IS.singleton <$> planetOwner)
-                  $ gameStatePlanets gs'
-    fleetPlayers = map (IS.singleton <$> fleetOwner) $ gameStateFleets gs'
+    planetPlayers = IM.elems $ IM.map (IS.singleton . planetOwner)
+                  $ IM.filter (not . isNeutral) $ gameStatePlanets gs'
+    fleetPlayers = map (IS.singleton . fleetOwner) $ gameStateFleets gs'
     remainingPlayers = IS.unions $ planetPlayers ++ fleetPlayers
 
     -- Find the losers
@@ -372,7 +372,7 @@ engineTurn ordersMap gs = ( ( gameOver, winner , dropped ++ losers), gs' )
 engineTurnNoReport :: IntMap [Order] -- ^ Orders groups by issuing players
                    -> GameState      -- ^ Old game state
                    -> GameState      -- ^ New game state
-engineTurnNoReport = ((arrival . advancement) .) <$> departureNoFailReport
+engineTurnNoReport = ((arrival . advancement) .) . departureNoFailReport
 
 -- | Do a full game state update as if no players gave any orders
 --
