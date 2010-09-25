@@ -350,7 +350,7 @@ engineTurn ordersMap gs = ( ( gameOver, winner , dropped ++ losers), gs' )
     notDroppedPlayers = IS.unions $ planetPlayers' ++ fleetPlayers'
 
     -- Advancement and arrival phases
-    gs' = advancement $ arrival gs''
+    gs' = arrival $ advancement gs''
 
     -- Who is left after that?
     planetPlayers = IM.elems $ IM.map (IS.singleton <$> planetOwner)
