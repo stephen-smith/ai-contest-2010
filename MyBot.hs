@@ -8,6 +8,7 @@ import Control.Applicative ((<$>), (<*>))
 import Data.Function (on)
 import Data.List (partition, sortBy, groupBy, maximumBy)
 import qualified Data.IntMap as IM
+import Data.IntMap (IntMap)
 import Data.Ord (comparing)
 
 -- import qualified System.IO.Unsafe (unsafePerformIO)
@@ -39,6 +40,15 @@ reduceOrders xs = concat $ IM.elems $ IM.map IM.elems orderMap
     shipsMap = IM.unionsWith (IM.unionWith (+)) $ map shipMap xs
     shipMap o = IM.singleton (orderSource o)
                $ IM.singleton (orderDestination o) (orderShips o)
+
+predict :: GameState   -- ^ Game State
+        -> [GameState] -- ^ Future game states
+predict = iterate simpleEngineTurn
+
+futureByTime :: Int              -- ^ Maximum time
+             -> GameState        -- ^ Initial Game State
+             -> IntMap GameState -- ^ Future game states indexed by time
+futureByTime n = (IM.fromList . zip [0..n]) <$> predict
 
 doTurn :: GameState  -- ^ Game state
        -> [Order]    -- ^ Orders
@@ -159,8 +169,7 @@ doTurn state = if IM.null myPlanets
         return $ -}(now_orders ++ more, final)
       where
         -- Predict the future given current game state
-        future = iterate simpleEngineTurn gs
-        stateByTime = IM.fromList $ zip [0..maxTransitTime] future
+        stateByTime = futureByTime maxTransitTime gs
 
         -- Extend the planet structure with some useful data
         extendPlanet t p = (p, (t, shipsToConquer))
