@@ -270,7 +270,7 @@ doTurn state = if IM.null myPlanets
         redeployPid pid ships
           | IM.null closer              = []
           | IM.null myDistancesToEnemy  = planetOrders
-          | transitTime > 2 * enemyDist = []
+          | 2 * transitTime > enemyDist = []
           | otherwise                   = planetOrders
           where
             -- This planet's distance from an attackable planet
