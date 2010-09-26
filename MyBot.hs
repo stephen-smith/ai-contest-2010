@@ -287,7 +287,7 @@ doTurn state = if IM.null myPlanets
                     $ IM.assocs closer
             transitTime = snd $ head closest
             destinations = map fst closest
-            sizes = ships `pidgeonhole` length destinations
+            sizes = filter (/= 0) $ ships `pidgeonhole` length destinations
 
             -- Make orders
             planetOrders = zipWith (Order pid) destinations sizes
