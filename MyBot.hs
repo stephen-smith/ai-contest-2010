@@ -43,7 +43,7 @@ reduceOrders xs = concat $ IM.elems $ IM.map IM.elems orderMap
 
 predict :: GameState   -- ^ Game State
         -> [GameState] -- ^ Future game states
-predict s = s : if over then [] else predict s'
+predict s = s : if over then [s'] else predict s'
   where ((over, _, _), s') = engineTurnNoOrders s
 
 futureByTime :: Int              -- ^ Maximum time
