@@ -291,7 +291,7 @@ doTurn state = if IM.null myPlanets
             sizes = filter (/= 0) $ ships `pidgeonhole` length destinations
 
             -- Make orders
-            planetOrders = zipWith (Order pid) destinations sizes
+            planetOrders = zipWith (orderViaWaypoints pid) destinations sizes
 
         orders = concat $ IM.elems
                $ IM.mapWithKey redeployPid availableShips
