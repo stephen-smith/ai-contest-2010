@@ -284,7 +284,8 @@ doTurn state = if IM.null myPlanets
 
             -- Determine where to send
             closest = head $ groupBy ((==) `on` snd) $ sortBy (comparing snd)
-                    $ IM.assocs closer
+                    $ IM.assocs
+                    $ IM.mapWithKey (const . distanceById pid) closer
             transitTime = snd $ head closest
             destinations = map fst closest
             sizes = filter (/= 0) $ ships `pidgeonhole` length destinations
