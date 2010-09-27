@@ -15,11 +15,15 @@ import Data.Ord (comparing)
 
 import PlanetWars
 
+-- | Divide, rounding up, without using floating point
+--
 infixl 7 `divCeil`
 divCeil :: Integral a => a -> a -> a
 divCeil x y = if r > 0 then q + 1 else q
   where (q, r) = x `divMod` y
 
+-- | Distribute items among bins
+--
 infixl 7 `pidgeonhole`
 pidgeonhole :: Integral a => a -> a -> [a]
 pidgeonhole x y | y < 0     = pidgeonhole x $ negate y
