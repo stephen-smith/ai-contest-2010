@@ -38,8 +38,8 @@ reduceOrders xs = concat $ IM.elems $ IM.map IM.elems orderMap
   where
     orderMap = IM.mapWithKey (IM.mapWithKey . Order) shipsMap
     shipsMap = IM.unionsWith (IM.unionWith (+)) $ map shipMap xs
-    shipMap o = IM.singleton (orderSource o)
-               $ IM.singleton (orderDestination o) (orderShips o)
+    shipMap = IM.singleton . orderSource
+            <*> (IM.singleton . orderDestination <*> orderShips)
 
 -- | Predict future game states assuming no orders from either side
 -- | Since our simulation engine does know about the turn limit, this
