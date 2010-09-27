@@ -51,6 +51,10 @@ futureByTime :: Int              -- ^ Maximum time
              -> IntMap GameState -- ^ Future game states indexed by time
 futureByTime n = (IM.fromList . zip [0..n]) <$> predict
 
+endOfTime :: IntMap GameState -- ^ Future same states indexed by time
+          -> Int              -- ^ Maximum time index
+endOfTime = fst . fst . maybe (error "Main.endOfTime") id . IM.minViewWithKey
+
 alliedShips :: Planet -- ^ Any planet
             -> Int    -- ^ Ships owned by me on that planet.
 alliedShips p = if isAllied p then planetShips p else 0
@@ -252,6 +256,7 @@ doTurn state = if IM.null myPlanets
                       | otherwise                       = (orders, gs')
       where
         stateByTime = futureByTime maxTransitTime gs
+        scheduleLimit = endOfTime stateByTime
         availableShips = shipsAvailableAlways stateByTime
 
         myDistances = distances `IM.intersection` myPlanets
@@ -269,6 +274,7 @@ doTurn state = if IM.null myPlanets
 
         redeployPid pid ships
           | IM.null closer              = []
+          | transitTime > scheduleLimit = []
           | IM.null myDistancesToEnemy  = planetOrders
           | 2 * transitTime > enemyDist = []
           | otherwise                   = planetOrders
