@@ -41,16 +41,27 @@ reduceOrders xs = concat $ IM.elems $ IM.map IM.elems orderMap
     shipMap o = IM.singleton (orderSource o)
                $ IM.singleton (orderDestination o) (orderShips o)
 
+-- | Predict future game states assuming no orders from either side
+-- | Since our simulation engine does know about the turn limit, this
+-- | is likely an infinite list
+--
 predict :: GameState   -- ^ Game State
         -> [GameState] -- ^ Future game states
 predict s = s : if over then [s'] else predict s'
   where ((over, _, _), s') = engineTurnNoOrders s
 
+-- | Take predictions an key then based on time.  Limit the results
+-- | to certain number of turns, since predictions might infinite and
+-- | maps are strict on their keys
+--
 futureByTime :: Int              -- ^ Maximum time
              -> GameState        -- ^ Initial Game State
              -> IntMap GameState -- ^ Future game states indexed by time
 futureByTime n = (IM.fromList . zip [0..n]) <$> predict
 
+-- | Find the last turn predicted, which is the maximum key in the map.
+-- | This function will fail miserably if the map is empty.
+--
 endOfTime :: IntMap GameState -- ^ Future same states indexed by time
           -> Int              -- ^ Maximum time index
 endOfTime = fst . fst . maybe (error "Main.endOfTime") id . IM.minViewWithKey
