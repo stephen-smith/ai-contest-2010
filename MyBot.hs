@@ -35,6 +35,9 @@ splitWhile f l@(x:xs)
   | f x       = let (p, t) = splitWhile f xs in (x:p, t)
   | otherwise = ([], l)
 
+extendOn :: (a -> b) -> a -> (a, b)
+extendOn = ((,) . id <*>)
+
 reduceOrders :: [Order] -> [Order]
 reduceOrders xs = concat $ IM.elems $ IM.map IM.elems orderMap
   where
@@ -142,9 +145,11 @@ doTurn state = if IM.null myPlanets
         wp = maximumBy (comparing $ distanceById s) $ map planetId wps
 
     -- Heuristic value of a planet.
-    value (p, (t, s)) = (s - growth, t, s)
+    value (p, (t, s, l)) = (cappedReward, t, s, l)
       where
         -- Calculate reward for the planet
+        cappedReward = if isHostile p then min (-1) reward else reward
+        reward = l - growth
         growth = planetGrowthRate p * growthFactor * growthTime
         growthFactor = if isNeutral p
             then 1
@@ -170,8 +175,7 @@ doTurn state = if IM.null myPlanets
                $ filter (/= 0) $ planetShips p `pidgeonhole` length destinations
           where
             sourceId = planetId p
-            planetsWithDistance = map ((,) <$> id
-                                           <*> (distanceById sourceId . planetId))
+            planetsWithDistance = map (extendOn $ distanceById sourceId . planetId)
                                 $ IM.elems keptPlanets
             validDestination q d = d <= scheduleLimit && isAllied futurePlanet
               where futurePlanet = planetById (stateByTime IM.! d) $ planetId q
@@ -196,24 +200,26 @@ doTurn state = if IM.null myPlanets
         availableShips = shipsAvailableAlways stateByTime
 
         -- Extend the planet structure with some useful data
-        extendPlanet t p = (p, (t, shipsToConquer))
+        extendPlanet t p = (p, (t, shipsToConquer, shipsLost))
           where
+            shipsPresent = planetShips p
             -- Calculate cost for the planet
-            shipsToConquer = if isAllied p
-                then 0
+            (shipsToConquer, shipsLost) = if isAllied p
+                then (0, 0)
                 else if t > 0 && (isAllied $ planetById (stateByTime IM.! (t - 1)) $ planetId p)
-                then planetShips p
-                else planetShips p + 1
+                then (shipsPresent, shipsPresent)
+                else (shipsPresent + 1, shipsPresent)
         extendGameState t = IM.elems . IM.map ep . gameStatePlanets
           where
             ep = extendPlanet t
 
         -- Target the "best" planet that we have enough ships to take.
-        targets = sortBy (comparing value) $ filter (not . tooHard)
-                $ filter ((> 0) . snd .snd) $ concat
-                $ IM.elems $ IM.mapWithKey extendGameState stateByTime
-        tooHard (p, (t, s)) = s > shipsInRange
+        targets = map fst $ sortBy (comparing snd)
+                $ filter suitable $ map (extendOn value) $ concat $ IM.elems
+                $ IM.mapWithKey extendGameState stateByTime
+        suitable ((p, (t, s, _)), v) = reward < 0 && 0 < s && s <= shipsInRange
           where
+            (reward, _, _, _) = v
             shipsInRange = sum $ IM.elems
                          $ IM.filterWithKey inRange
                          $ availableShips
@@ -221,8 +227,7 @@ doTurn state = if IM.null myPlanets
         (target:_) = targets
 
         -- Send at least enough ships to conquer it.
-        targetFleetSize = (snd $ snd target)
-        targetPlanet = fst target
+        (targetPlanet, (targetTime, targetFleetSize, _)) = target
         distTarget = distanceById $ planetId targetPlanet
 
         -- Send from close planets, first
@@ -250,7 +255,7 @@ doTurn state = if IM.null myPlanets
         all_orders = filter positiveFleetSize $ map order localPids
         srcNotEqualDest = (/=) <$> orderSource <*> orderDestination
         (orders, _) = partition srcNotEqualDest all_orders
-        now_orders = filter ((== (fst $ snd target)) . distanceById (planetId targetPlanet) . orderSource) orders
+        now_orders = filter ((== targetTime) . distanceById (planetId targetPlanet) . orderSource) orders
 
         -- Partially advance game gs for future calculations
         next = departureNoFailReport (IM.singleton 1 orders) gs
