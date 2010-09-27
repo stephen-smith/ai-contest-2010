@@ -11,8 +11,6 @@ import qualified Data.IntMap as IM
 import Data.IntMap (IntMap)
 import Data.Ord (comparing)
 
--- import qualified System.IO.Unsafe (unsafePerformIO)
-
 import PlanetWars
 
 -- | Divide, rounding up, without using floating point
@@ -88,8 +86,7 @@ doTurn state = if IM.null myPlanets
         (attacks, state') = attackOrders state
         (redeployments, state'') = redeployOrders state'
         fleeing = fleeOrders state''
-    in{- System.IO.Unsafe.unsafePerformIO $ do
-        return $ -}reduceOrders $ attacks ++ redeployments ++ fleeing
+    in reduceOrders $ attacks ++ redeployments ++ fleeing
   where
     (myFleets, enemyFleets) = partition isAllied $ gameStateFleets state
 
@@ -189,19 +186,10 @@ doTurn state = if IM.null myPlanets
                     )
     attackOrders gs
       | IM.null availableShips = ([], gs)
-      | null targets  ={- System.IO.Unsafe.unsafePerformIO $ do
-        forM_ hardTargets $ \(p, (t, s)) -> do
-            putStrLn $ show (planetId p, t, s)
-        return $ -}([], gs)
-      | otherwise         = let
+      | null targets           = ([], gs)
+      | otherwise              = let
         (more, final) = attackOrders next
-      in{- System.IO.Unsafe.unsafePerformIO $ do 
-        forM_ hardTargets $ \(p, (t, s)) -> do
-            putStrLn $ show (planetId p, t, s)
-        putStrLn $ show (planetId $ fst target, snd target)
-        forM_ all_orders $ \o -> do
-            putStrLn $ show o
-        return $ -}(now_orders ++ more, final)
+      in (now_orders ++ more, final)
       where
         -- Predict the future given current game state
         stateByTime = futureByTime maxTransitTime gs
