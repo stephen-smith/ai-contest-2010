@@ -62,7 +62,7 @@ predict s = s : if over then [s'] else predict s'
 futureByTime :: Int              -- ^ Maximum time
              -> GameState        -- ^ Initial Game State
              -> IntMap GameState -- ^ Future game states indexed by time
-futureByTime n = (IM.fromList . zip [0..n]) <$> predict
+futureByTime n = IM.fromList . zip [0..n] . predict
 
 -- | Find the last turn predicted, which is the maximum key in the map.
 -- | This function will fail miserably if the map is empty.
