@@ -12,7 +12,7 @@ import Data.IntMap (IntMap)
 import Data.Ord (comparing)
 
 import System.IO (Handle, IOMode(WriteMode), hFlush, hPutStrLn, openFile)
-import qualified System.IO.Unsafe (unsafePerformIO)
+import qualified System.IO.Unsafe
 
 import PlanetWars
 
@@ -164,8 +164,8 @@ doTurn state = if IM.null myPlanets
 
     fleeOrders :: GameState -- ^ Current game state
                -> [Order]   -- ^ Proposed flights
-    fleeOrders gs | myShips > theirShips = myTrace ("Not fleeing: " ++ show myShips ++ " > " ++ show theirShips) $ []
-                  | IM.null lostPlanets  = myTrace ("Not fleeing: lost planets = " ++ show (IM.size lostPlanets)) $ []
+    fleeOrders gs | myShips > theirShips = myTrace ("Not fleeing: " ++ show myShips ++ " > " ++ show theirShips) []
+                  | IM.null lostPlanets  = myTrace "Not fleeing; no lost planets." []
                   | otherwise            = let
         results = flee =<< IM.elems lostPlanets
       in myTrace ("Fleeing!  " ++ show results) $ results
@@ -178,8 +178,8 @@ doTurn state = if IM.null myPlanets
 
         lostPlanets = IM.intersection myPlanets theirPlanetsSoon
 
-        flee p | null possibleDestinations = []
-               | otherwise                 =
+        flee p | null possibleDestinations = myTrace ("Not fleeing " ++ show p ++ "; nowhere to go.") []
+               | otherwise                 = myTrace (unlines (("Fleeing from " ++ show p ++ " to:"):map show destinations)) $
               zipWith (Order sourceId) (map planetId destinations)
             $ filter (/= 0) $ planetShips p `pidgeonhole` length destinations
           where
@@ -199,9 +199,9 @@ doTurn state = if IM.null myPlanets
                     , GameState  -- ^ New game state
                     )
     attackOrders gs
-      | IM.null availableShips = ([], gs)
-      | null targets           = ([], gs)
-      | otherwise              = let
+      | IM.null availableShips = myTrace ("Not attacking; no ships.") ([], gs)
+      | null targets           = myTrace ("Not attacking; no targets.") ([], gs)
+      | otherwise              = myTrace (unlines ("Attacks:":map show orders)) $ let
         (more, final) = attackOrders next
       in (now_orders ++ more, final)
       where
@@ -286,7 +286,7 @@ doTurn state = if IM.null myPlanets
                    -> ( [Order]
                       , GameState
                       )
-    redeployOrders gs | IM.null myDistancesToAttackable = ([], gs)
+    redeployOrders gs | IM.null myDistancesToAttackable = myTrace "Not redeploying; none to attack." ([], gs)
                       | otherwise                       = (orders, gs')
       where
         stateByTime = futureByTime maxTransitTime gs
@@ -307,11 +307,11 @@ doTurn state = if IM.null myPlanets
                           $ myDistancesToEnemy
 
         redeployPid pid ships
-          | IM.null closer              = []
-          | transitTime > scheduleLimit = []
-          | IM.null myDistancesToEnemy  = planetOrders
-          | 2 * transitTime > enemyDist = []
-          | otherwise                   = planetOrders
+          | IM.null closer              = myTrace ("Not redeploying for " ++ show pid ++ "; none closer.") []
+          | transitTime > scheduleLimit = myTrace ("Not redeploying for " ++ show pid ++ "; trip too long; " ++ show transitTime ++ " > " ++ show scheduleLimit ++ ".") []
+          | IM.null myDistancesToEnemy  = myTrace (unlines (("Redeploying for " ++ show pid ++ "; no enemies:"):map show planetOrders)) planetOrders
+          | 2 * transitTime > enemyDist = myTrace ("Not redeploying for " ++ show pid ++ "; too close to enemy; 2 * " ++ show transitTime ++ " > " ++ show enemyDist ++ ".") []
+          | otherwise                   = myTrace (unlines (("Redeploying for " ++ show pid ++ ":"):map show planetOrders)) planetOrders
           where
             -- This planet's distance from an attackable planet
             attackDist = minAttackDistances IM.! pid
