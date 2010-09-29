@@ -159,7 +159,6 @@ doTurn state = if IM.null myPlanets
     fleeOrders :: GameState -- ^ Current game state
                -> [Order]   -- ^ Proposed flights
     fleeOrders gs | myShips > theirShips = []
-                  | IM.null keptPlanets  = []
                   | otherwise            = flee =<< IM.elems lostPlanets
       where
         stateByTime = futureByTime maxTransitTime gs
@@ -168,8 +167,7 @@ doTurn state = if IM.null myPlanets
         next = stateByTime IM.! 1
         theirPlanetsSoon = IM.filter isHostile $ gameStatePlanets next
 
-        lost = const . (`IM.member` theirPlanetsSoon)
-        (lostPlanets, keptPlanets) = IM.partitionWithKey lost myPlanets
+        lostPlanets = IM.intersection myPlanets theirPlanetsSoon
 
         flee p | null possibleDestinations = []
                | otherwise                 =
@@ -178,7 +176,7 @@ doTurn state = if IM.null myPlanets
           where
             sourceId = planetId p
             planetsWithDistance = map (extendOn $ distanceById sourceId . planetId)
-                                $ IM.elems keptPlanets
+                                $ IM.elems $ IM.delete sourceId planetsMap
             validDestination q d = d <= scheduleLimit && isAllied futurePlanet
               where futurePlanet = planetById (stateByTime IM.! d) $ planetId q
             possibleDestinations = filter (uncurry validDestination)
