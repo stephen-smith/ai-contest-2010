@@ -71,15 +71,6 @@ endOfTime :: IntMap GameState -- ^ Future same states indexed by time
           -> Int              -- ^ Maximum time index
 endOfTime = fst . fst . maybe (error "Main.endOfTime") id . IM.maxViewWithKey
 
-alliedShips :: Planet -- ^ Any planet
-            -> Int    -- ^ Ships owned by me on that planet.
-alliedShips p = if isAllied p then planetShips p else 0
-
-shipsAvailableAlways :: IntMap GameState -- ^ Predicted game states
-                     -> IntMap Int      -- ^ Ships available throughout the prediction
-shipsAvailableAlways = IM.filter (/= 0) . IM.unionsWith min . IM.elems
-                     . IM.map (IM.map alliedShips . gameStatePlanets)
-
 doTurn :: GameState  -- ^ Game state
        -> [Order]    -- ^ Orders
 doTurn state = if IM.null myPlanets
@@ -103,6 +94,30 @@ doTurn state = if IM.null myPlanets
         turnsBetween p q = ceiling $ distanceBetween p q
 
     distanceById x y = (distances IM.! x) IM.! y
+
+    shipsAvailableAlways :: IntMap GameState -- ^ Predicted game states
+                         -> IntMap Int      -- ^ Ships available throughout the prediction
+    shipsAvailableAlways sbt = IM.filter (/= 0) . IM.unionsWith min . IM.elems
+                             $ availableByTime
+      where
+        alliedShips p = if isAllied p then planetShips p else 0
+        alliedByTime = IM.map (IM.map alliedShips . gameStatePlanets) sbt
+
+        hostileShips p = if isHostile p then planetShips p else 0
+        hostileByTime = IM.map (IM.map hostileShips . gameStatePlanets) sbt
+
+        available t pid allied = max 0 $ allied - hostileInRange
+          where
+            hostileInRange :: Int
+            hostileInRange = sum . IM.elems . IM.mapWithKey hostileShipsInRange
+                           $ distances IM.! pid
+
+            hostileShipsInRange :: Int -> Int -> Int
+            hostileShipsInRange qid d = if d <= t
+                then (hostileByTime IM.! (t - d)) IM.! qid
+                else 0
+        availableByTime = IM.mapWithKey (\t -> IM.mapWithKey $ available t)
+                        $ alliedByTime
 
     planetIds = IM.keys planetsMap
     maxTransitTime = maximum (distanceById <$> planetIds <*> planetIds)
