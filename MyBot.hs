@@ -154,8 +154,10 @@ doTurn state = if IM.null myPlanets
         lost = const . (`IM.member` theirPlanetsSoon)
         (lostPlanets, keptPlanets) = IM.partitionWithKey lost myPlanets
 
-        flee p = zipWith (Order sourceId) (map planetId destinations)
-               $ filter (/= 0) $ planetShips p `pidgeonhole` length destinations
+        flee p | null possibleDestinations = []
+               | otherwise                 =
+              zipWith (Order sourceId) (map planetId destinations)
+            $ filter (/= 0) $ planetShips p `pidgeonhole` length destinations
           where
             sourceId = planetId p
             planetsWithDistance = map ((,) <$> id
@@ -163,10 +165,11 @@ doTurn state = if IM.null myPlanets
                                 $ IM.elems keptPlanets
             validDestination q d = d <= scheduleLimit && isAllied futurePlanet
               where futurePlanet = planetById (stateByTime IM.! d) $ planetId q
+            possibleDestinations = filter (uncurry validDestination)
+                                 $ planetsWithDistance
             destinations = sortBy (comparing planetShips) $ map fst $ head
                          $ groupBy ((==) `on` snd)
-                         $ sortBy (comparing snd)
-                         $ filter (uncurry validDestination) planetsWithDistance
+                         $ sortBy (comparing snd) possibleDestinations
 
     attackOrders :: GameState    -- ^ Old game state
                  -> ( [Order]    -- ^ Proposed deployments
