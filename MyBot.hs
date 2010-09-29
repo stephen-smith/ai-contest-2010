@@ -69,7 +69,7 @@ futureByTime n = IM.fromList . zip [0..n] . predict
 --
 endOfTime :: IntMap GameState -- ^ Future same states indexed by time
           -> Int              -- ^ Maximum time index
-endOfTime = fst . fst . maybe (error "Main.endOfTime") id . IM.minViewWithKey
+endOfTime = fst . fst . maybe (error "Main.endOfTime") id . IM.maxViewWithKey
 
 alliedShips :: Planet -- ^ Any planet
             -> Int    -- ^ Ships owned by me on that planet.
