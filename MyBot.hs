@@ -95,36 +95,16 @@ doTurn state = if IM.null myPlanets
 
     distanceById x y = (distances IM.! x) IM.! y
 
-    shipsAvailableAlways :: IntMap GameState -- ^ Predicted game states
-                         -> IntMap Int      -- ^ Ships available throughout the prediction
-    shipsAvailableAlways sbt = IM.filter (/= 0) . IM.unionsWith min . IM.elems
-                             $ availableByTime
-      where
-        alliedShips p = if isAllied p then planetShips p else 0
-        alliedByTime = IM.map (IM.map alliedShips . gameStatePlanets) sbt
-
-        hostileShips p = if isHostile p then planetShips p else 0
-        hostileByTime = IM.map (IM.map hostileShips . gameStatePlanets) sbt
-
-        available t pid allied = max 0 $ allied - hostileInRange
-          where
-            hostileInRange :: Int
-            hostileInRange = sum . IM.elems . IM.mapWithKey hostileShipsInRange
-                           $ distances IM.! pid
-
-            hostileShipsInRange :: Int -> Int -> Int
-            hostileShipsInRange qid d = if d <= t
-                then (hostileByTime IM.! (t - d)) IM.! qid
-                else 0
-        availableByTime = IM.mapWithKey (\t -> IM.mapWithKey $ available t)
-                        $ alliedByTime
-
     planetIds = IM.keys planetsMap
     maxTransitTime = maximum (distanceById <$> planetIds <*> planetIds)
 
     -- Partition all planets
     (myPlanets, notMyPlanets) = IM.partition isAllied planetsMap
     enemyPlanets = IM.filter isHostile notMyPlanets
+
+    -- Count production
+    myProduction = sum . map planetGrowthRate $ IM.elems myPlanets
+    theirProduction = sum . map planetGrowthRate $ IM.elems enemyPlanets
 
     -- Count ship totals
     (myPlanetShips, theirPlanetShips) = IM.fold accum (0, 0) planetsMap
@@ -137,6 +117,30 @@ doTurn state = if IM.null myPlanets
       where
         [myFleetShips, theirFleetShips] =
             map (sum . map fleetShips) [myFleets, enemyFleets]
+
+    shipsAvailableAlways :: IntMap GameState -- ^ Predicted game states
+                         -> IntMap Int      -- ^ Ships available throughout the prediction
+    shipsAvailableAlways sbt = IM.filter (/= 0) . IM.unionsWith min . IM.elems
+                             $ availableByTime
+      where
+        alliedShips p = if isAllied p then planetShips p else 0
+        alliedByTime = IM.map (IM.map alliedShips . gameStatePlanets) sbt
+
+        hostileShips p = if isHostile p then planetShips p else 0
+        hostileByTime = IM.map (IM.map hostileShips . gameStatePlanets) sbt
+
+        available t pid allied = if myShips <= theirShips
+                                    && myProduction >= theirProduction
+            then max 0 $ allied - hostileInRange
+            else allied
+          where
+            hostileInRange = sum . IM.elems . IM.mapWithKey hostileShipsInRange
+                           $ distances IM.! pid
+            hostileShipsInRange qid d = if d <= t
+                then (hostileByTime IM.! (t - d)) IM.! qid
+                else 0
+        availableByTime = IM.mapWithKey (\t -> IM.mapWithKey $ available t)
+                        $ alliedByTime
 
     -- Calculate way-points
     waypoints = IM.mapWithKey oneToMany planetsMap
