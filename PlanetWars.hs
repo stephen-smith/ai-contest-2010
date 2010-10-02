@@ -49,6 +49,9 @@ module PlanetWars
     , engineTurnNoOrders
     , simpleEngineTurn
 
+      -- ^ Projection
+    , projectGameState
+
       -- * Debugging
     , stateFromFile
     , unique
@@ -176,6 +179,27 @@ buildGameState state string = case words string of
     _ -> state
   where
     planetId' = IM.size $ gameStatePlanets state
+
+projectGameState :: Int       -- ^ Player to become player 1.
+                 -> GameState -- ^ Any game state
+                 -> GameState -- ^ Projected game state
+projectGameState      1 state = state
+projectGameState player state = state { gameStatePlanets = projectedPlanets
+                                      , gameStateFleets = projectedFleets
+                                      }
+  where
+    projectedPlanets = IM.map projectPlanet $ gameStatePlanets state
+    projectedFleets = map projectFleet $ gameStateFleets state
+    projectPlanet p = if planetOwner p == 1
+        then p { planetOwner = player }
+        else if planetOwner p == player
+        then p { planetOwner = 1 }
+        else p
+    projectFleet f = if fleetOwner f == 1
+        then f { fleetOwner = player }
+        else if fleetOwner f == player
+        then f { fleetOwner = 1 }
+        else f
 
 -- | Check if a given resource is allied
 --
