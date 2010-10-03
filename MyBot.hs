@@ -96,12 +96,12 @@ refineTurn strategy gs = do
             orders <- strategy state
             orders `seq` writeIORef bin orders
             if orders `elem` prev_orders
-                then return ()
+                then return $ head prev_orders
                 else do
                     opp_orders <- pred_opp orders
                     loop (dep_opp opp_orders) $ orders:prev_orders
-    _ <- timeout refinementTimeout $ loop gs []
-    orders <- readIORef bin
+    m_orders <- timeout refinementTimeout $ loop gs []
+    orders <- maybe (readIORef bin) return m_orders
     mapM_ issueOrder orders
 
 doTurn :: GameState  -- ^ Game state
