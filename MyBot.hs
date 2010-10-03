@@ -9,7 +9,9 @@ import Data.Function (on)
 import Data.List (partition, sortBy, groupBy, maximumBy)
 import qualified Data.IntMap as IM
 import Data.IntMap (IntMap)
+import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.Ord (comparing)
+import System.Timeout (timeout)
 
 import PlanetWars
 
@@ -79,6 +81,24 @@ shipsAvailableAlways :: IntMap GameState -- ^ Predicted game states
                      -> IntMap Int      -- ^ Ships available throughout the prediction
 shipsAvailableAlways = IM.filter (/= 0) . IM.unionsWith min . IM.elems
                      . IM.map (IM.map alliedShips . gameStatePlanets)
+
+refinementTimeout :: Int
+refinementTimeout = 900000
+
+refineTurn :: (GameState -> IO [Order]) -> GameState -> IO ()
+refineTurn strategy gs = do
+    bin <- newIORef []
+    let
+        loop state = do
+            orders <- strategy state
+            writeIORef bin orders
+            opp_orders <- strategy . projectGameState 2
+                                   $ departureNoFailReport (IM.singleton 1 orders)
+                                   $ state
+            loop $ departureNoFailReport (IM.singleton 2 opp_orders) state
+    _ <- timeout refinementTimeout $ loop gs
+    orders <- readIORef bin
+    mapM_ issueOrder orders
 
 doTurn :: GameState  -- ^ Game state
        -> [Order]    -- ^ Orders
