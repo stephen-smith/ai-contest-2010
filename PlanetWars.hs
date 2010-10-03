@@ -126,7 +126,7 @@ data Order = Order
     { orderSource      :: Int
     , orderDestination :: Int
     , orderShips       :: Int
-    } deriving (Show)
+    } deriving (Eq, Show)
 
 -- | A data structure describing the game state.
 --

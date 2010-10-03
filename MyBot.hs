@@ -89,14 +89,18 @@ refineTurn :: (GameState -> IO [Order]) -> GameState -> IO ()
 refineTurn strategy gs = do
     bin <- newIORef []
     let
-        loop state = do
+        pred_opp os = strategy . projectGameState 2
+                    . departureNoFailReport (IM.singleton 1 os) $ gs
+        dep_opp os = departureNoFailReport (IM.singleton 2 os) gs
+        loop state prev_orders = do
             orders <- strategy state
             orders `seq` writeIORef bin orders
-            opp_orders <- strategy . projectGameState 2
-                                   . departureNoFailReport (IM.singleton 1 orders)
-                                   $ gs
-            loop $ departureNoFailReport (IM.singleton 2 opp_orders) gs
-    _ <- timeout refinementTimeout $ loop gs
+            if orders `elem` prev_orders
+                then return ()
+                else do
+                    opp_orders <- pred_opp orders
+                    loop (dep_opp opp_orders) $ orders:prev_orders
+    _ <- timeout refinementTimeout $ loop gs []
     orders <- readIORef bin
     mapM_ issueOrder orders
 
