@@ -91,11 +91,11 @@ refineTurn strategy gs = do
     let
         loop state = do
             orders <- strategy state
-            writeIORef bin orders
+            orders `seq` writeIORef bin orders
             opp_orders <- strategy . projectGameState 2
-                                   $ departureNoFailReport (IM.singleton 1 orders)
-                                   $ state
-            loop $ departureNoFailReport (IM.singleton 2 opp_orders) state
+                                   . departureNoFailReport (IM.singleton 1 orders)
+                                   $ gs
+            loop $ departureNoFailReport (IM.singleton 2 opp_orders) gs
     _ <- timeout refinementTimeout $ loop gs
     orders <- readIORef bin
     mapM_ issueOrder orders
@@ -338,4 +338,4 @@ doTurn state = if IM.null myPlanets
         gs' = departureNoFailReport (IM.singleton 1 orders) gs
 
 main :: IO ()
-main = bot doTurn
+main = ioBot . refineTurn $ return . doTurn
