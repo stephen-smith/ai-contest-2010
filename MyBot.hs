@@ -317,5 +317,32 @@ doTurn state = if IM.null myPlanets
 
         gs' = departureNoFailReport (IM.singleton 1 orders) gs
 
+    trickleOrders :: GameState
+                  -> ( [Order]
+                     , GameState
+                     )
+    trickleOrders gs = (orders, gs')
+      where
+        stateByTime = futureByTime maxTransitTime gs
+        availableShips = shipsAvailableAlways stateByTime
+
+        neutralDistances = distances `IM.intersection` neutralPlanets
+        neutralToHostileDistances = IM.filter (not . IM.null)
+                                  $ IM.map (`IM.intersection` enemyPlanets)
+                                  $ neutralDistances
+        neutralToAlliedDistances = IM.filter (not . IM.null)
+                                 $ IM.map (`IM.intersection` myPlanets)
+                                 $ neutralDistances
+
+        myDistances = distances `IM.intersection` availableShips
+        myDistancesToNeutral = IM.map (`IM.intersection` neutralPlanets) myDistances
+
+        tricklePid pid ships = undefined
+          where
+            targetWithDistance
+
+        orders = concat $ IM.elems $ IM.mapWithKey tricklePid availableShips
+        gs' = departureNoFailReport (IM.singleton 1 orders) gs
+
 main :: IO ()
 main = bot doTurn
