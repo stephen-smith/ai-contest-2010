@@ -343,27 +343,26 @@ engineTurn ordersMap gs = ( ( gameOver, winner , dropped ++ losers), gs' )
     (dropped, gs'') = departure ordersMap gs
 
     -- Who is left after that?
-    planetPlayers' = IM.elems $ IM.map (IS.singleton <$> planetOwner)
-                  $ gameStatePlanets gs''
-    fleetPlayers' = map (IS.singleton <$> fleetOwner) $ gameStateFleets gs''
-    notDroppedPlayers = IS.unions $ planetPlayers' ++ fleetPlayers'
+    planetPlayers' = IM.elems . IM.map planetOwner $ gameStatePlanets gs''
+    fleetPlayers' = map fleetOwner $ gameStateFleets gs''
+    (_, notDroppedPlayers) = IS.split 0 . IS.fromList
+                           $ planetPlayers' ++ fleetPlayers'
 
     -- Advancement and arrival phases
     gs' = arrival $ advancement gs''
 
     -- Who is left after that?
-    planetPlayers = IM.elems $ IM.map (IS.singleton . planetOwner)
-                  $ IM.filter (not . isNeutral) $ gameStatePlanets gs'
-    fleetPlayers = map (IS.singleton . fleetOwner) $ gameStateFleets gs'
-    remainingPlayers = IS.unions $ planetPlayers ++ fleetPlayers
+    planetPlayers = IM.elems . IM.map planetOwner $ gameStatePlanets gs'
+    fleetPlayers = map fleetOwner $ gameStateFleets gs'
+    (_, remainingPlayers) = IS.split 0 . IS.fromList $ planetPlayers ++ fleetPlayers
 
     -- Find the losers
-    losers = IS.elems $ IS.difference remainingPlayers notDroppedPlayers
+    losers = IS.elems $ remainingPlayers IS.\\ notDroppedPlayers
 
     -- Find the winner and end the game
     countRemaining = IS.size remainingPlayers
     gameOver = countRemaining < 2
-    winner | countRemaining == 1 = Just $ head $ IS.elems remainingPlayers
+    winner | countRemaining == 1 = Just . head $ IS.elems remainingPlayers
            | otherwise           = Nothing
 
 -- | Do a full game state update, but don't report game over, winner, or losers
