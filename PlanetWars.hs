@@ -142,7 +142,7 @@ instance Monoid GameState where
 -- | Find planet in GameState with given planetId
 --
 getPlanetById :: Int -> GameState -> Planet
-getPlanetById id state = (IM.!) (gameStatePlanets state) id
+getPlanetById pid state = (IM.!) (gameStatePlanets state) pid
 
 -- | Auxiliary function for parsing the game state. This function takes an
 -- initial state, and a line. The line is parsed and content is applied on the
@@ -483,15 +483,15 @@ debugBot f = do
     run h s = do
         orders <- stateDump h s
         dumpIssue h orders
-    dumpIssue log orders = do
-        hPutStrLn log "\nOrders:"
-        hPutStrLn log $ show orders
-        hFlush log
+    dumpIssue hlog orders = do
+        hPutStrLn hlog "\nOrders:"
+        hPutStrLn hlog $ show orders
+        hFlush hlog
         mapM_ issueOrder orders
-    stateDump log s = do
-        hPutStrLn log "\nState:"
-        hPutStrLn log $ show s
-        hFlush log
+    stateDump hlog s = do
+        hPutStrLn hlog "\nState:"
+        hPutStrLn hlog $ show s
+        hFlush hlog
         return $ f s
 
 -- | Read a game state from file. The format is the same as the server's output
@@ -499,13 +499,13 @@ debugBot f = do
 --
 stateFromFile :: FilePath     -- ^ Path to the file containing the game state.
               -> IO GameState -- ^ Parsed game state
-stateFromFile path = withFile path ReadMode (read mempty)
+stateFromFile path = withFile path ReadMode (loop mempty)
   where
-    read state handle = do
+    loop state handle = do
       line <- takeWhile (/= '#') <$> hGetLine handle
       if "go" `isPrefixOf` line
         then return state
-        else read (buildGameState state line) handle
+        else loop (buildGameState state line) handle
 
 -- | Checks if a planet will survive the incoming fleets. A planet survives if
 -- its owner is still the same after all known fleets arrive.
