@@ -10,6 +10,8 @@ module PlanetWars
     , Fleet (..)
     , Order (..)
     , GameState (..)
+    , GameStateInfo (..)
+    , makeGSI
 
       -- * Utility functions
     , isAllied
@@ -53,6 +55,7 @@ module PlanetWars
     ) where
 
 import Control.Applicative ((<$>), (<*>))
+import qualified Data.Foldable as F
 import Data.List (intercalate, isPrefixOf, partition, foldl', sortBy)
 import Data.Maybe (fromJust)
 import Data.Monoid (Monoid, mempty, mappend)
@@ -138,6 +141,109 @@ instance Monoid GameState where
     mempty = GameState mempty mempty
     mappend (GameState p1 f1) (GameState p2 f2) =
         GameState (p1 `mappend` p2) (f1 `mappend` f2)
+
+data GameStateInfo = GSI
+    { gsiGameState :: GameState
+
+    -- Planet stuff
+    , gsiPlanetCount :: Int
+
+    , gsiPlanetsByOwner :: IntMap (IntMap Planet)
+    , gsiNeutralPlanets :: IntMap Planet
+    , gsiAlliedPlanets :: IntMap Planet
+    , gsiNonAlliedPlanets :: IntMap Planet
+    , gsiHostilePlanets :: IntMap Planet
+
+    , gsiDistances :: IntMap (IntMap Int)
+    , gsiDistanceById :: Int -> Int -> Int
+
+    , gsiProductionByOwner :: IntMap Int
+    , gsiAlliedProduction :: Int
+    , gsiHostileProduction :: Int
+
+    -- Fleet stuff
+    , gsiFleetCount :: Int
+
+    , gsiFleetsByOwner :: IntMap [Fleet]
+    , gsiAlliedFleets :: [Fleet]
+    , gsiHostileFleets :: [Fleet]
+
+    -- Combined info
+    , gsiShipsByOwner :: IntMap Int
+    , gsiAlliedShips :: Int
+    , gsiHostileShips :: Int
+    }
+
+makeGSI :: GameState
+        -> GameStateInfo
+makeGSI gs = GSI
+    { gsiGameState = gs
+
+    , gsiPlanetCount = planetCount
+
+    , gsiPlanetsByOwner = planetsByOwner
+    , gsiNeutralPlanets = neutralPlanets
+    , gsiAlliedPlanets = alliedPlanets
+    , gsiNonAlliedPlanets = nonAlliedPlanets
+    , gsiHostilePlanets = hostilePlanets
+
+    , gsiDistances = distances
+    , gsiDistanceById = distanceById
+
+    , gsiProductionByOwner = productionByOwner
+    , gsiAlliedProduction = alliedProduction
+    , gsiHostileProduction = hostileProduction
+
+    , gsiFleetCount = fleetCount
+
+    , gsiFleetsByOwner = fleetsByOwner
+    , gsiAlliedFleets = alliedFleets
+    , gsiHostileFleets = hostileFleets
+
+    , gsiShipsByOwner = shipsByOwner
+    , gsiAlliedShips = alliedShips
+    , gsiHostileShips = hostileShips
+    }
+  where
+    planets = gameStatePlanets gs
+    fleets = gameStateFleets gs
+
+    planetCount = IM.size planets
+
+    planetsByOwner = IM.foldWithKey accum IM.empty planets
+      where
+        accum pid p = IM.insertWith IM.union (planetOwner p) $ IM.singleton pid p
+    (np, ap, hp) = IM.splitLookup 1 planetsByOwner
+    neutralPlanets = IM.fold IM.union IM.empty np
+    alliedPlanets = maybe IM.empty id ap
+    nonAlliedPlanets = neutralPlanets `IM.union` hostilePlanets
+    hostilePlanets = IM.fold IM.union IM.empty hp
+
+    distances = IM.map distancesFrom planets
+      where
+        distancesFrom p = IM.map (ceiling . distanceBetween p) planets
+    distanceById = (IM.!) . (distances IM.!)
+
+    productionByOwner = IM.map (F.sum . IM.map planetGrowthRate) planetsByOwner
+    (_, aprod, hprod) = IM.splitLookup 1 productionByOwner
+    alliedProduction = maybe 0 id aprod
+    hostileProduction = F.sum hprod
+
+    fleetCount = length fleets
+
+    fleetsByOwner = foldr accum IM.empty fleets
+      where accum f = IM.insertWith (++) (fleetOwner f) [f]
+    (_, af, hf) = IM.splitLookup 1 fleetsByOwner
+    alliedFleets = maybe [] id af
+    hostileFleets = F.concat hf
+
+    shipsByOwner = IM.unionWith (+) planetShipsByOwner fleetShipsByOwner
+      where
+        planetShipsByOwner = IM.map (F.sum . IM.map planetShips) planetsByOwner
+        fleetShipsByOwner = IM.map (sum . map fleetShips) fleetsByOwner
+    (_, aships, hships) = IM.splitLookup 1 shipsByOwner
+    alliedShips = maybe 0 id aships
+    hostileShips = F.sum hships
 
 -- | Find planet in GameState with given planetId
 --
