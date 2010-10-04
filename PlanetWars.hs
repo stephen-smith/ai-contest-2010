@@ -21,8 +21,6 @@ module PlanetWars
     , distanceBetween
     , centroid
     , isArrived
-    , planets
-    , production
     , planetById
     , willSurviveAttack
     , currentOwner
@@ -421,24 +419,6 @@ centroid planets = div' $ IM.fold add' (0, 0) planets
 isArrived :: Fleet -> Bool
 isArrived = (== 0) . fleetTurnsRemaining
 
--- | List of Planets from a game state.
---
-planets :: GameState  -- ^ Game state to analyze
-        -> [Planet]   -- ^ List of Planets
-planets state = map snd $ IM.toList $ gameStatePlanets state
-
--- | Calculate the production (number of new ships in the next turn) of both
--- players.
---
-production :: GameState  -- ^ Game state to analyze
-           -> (Int, Int) -- ^ Pair having the player and enemy's production
-production g = foldl' prod (0,0) (planets g)
-  where 
-    prod (x,y) p = case planetOwner p of
-      0 -> (x,y)
-      1 -> (x + planetGrowthRate p, y)
-      2 -> (x, y + planetGrowthRate p)
-
 -- | Get a planet by ID. Make sure the ID exists!
 --
 planetById :: GameState -> Int -> Planet
@@ -447,12 +427,6 @@ planetById state id' = fromJust $ IM.lookup id' $ gameStatePlanets state
 stepAllFleets :: GameState -> GameState
 stepAllFleets state | null (gameStateFleets state) = state
                     | otherwise = stepAllFleets $ simpleEngineTurn state
-
--- | Aux
-partitionToIntMap :: (a -> Int) -> [a] -> IntMap [a]
-partitionToIntMap fn as =
-    let ins x = IM.insertWith (++) (fn x) [x]
-    in  foldr ins IM.empty as
 
 -- | Issue an order
 --
