@@ -366,7 +366,7 @@ departure ordersMap gs = ( droppedPlayers, gs' )
 departureNoFailReport :: IntMap [Order] -- ^ Orders, grouped by issuing player
                       -> GameState      -- ^ Old game state
                       -> GameState      -- ^ New game state
-departureNoFailReport = (snd <$>) <$> departure
+departureNoFailReport = (snd .) . departure
 
 -- | Perform the 'Departure' phase of game state update with no orders
 --
