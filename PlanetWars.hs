@@ -498,10 +498,10 @@ simpleEngineTurn = engineTurnNoReport IM.empty
 
 -- | Add (or subtract) a number of ships to (or from) a planet
 --
-addShips :: Planet  -- ^ Planet to add ships to
-         -> Int     -- ^ Number of ships to add
+addShips :: Int     -- ^ Number of ships to add
+         -> Planet  -- ^ Planet to add ships to
          -> Planet  -- ^ Resulting planet
-addShips planet n = planet {planetShips = planetShips planet + n}
+addShips n p = p { planetShips = planetShips p + n }
 
 -- | Find the distance between two planets
 --
