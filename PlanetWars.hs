@@ -496,12 +496,31 @@ simpleEngineTurn :: GameState -- ^ Old game state
                  -> GameState -- ^ New game state
 simpleEngineTurn = engineTurnNoReport IM.empty
 
--- | Add (or subtract) a number of ships to (or from) a planet
+setOwner :: Int
+         -> Planet
+         -> Planet
+setOwner o p = p { planetOwner = o }
+
+-- | Set the number of ships on a planet
+--
+setShips :: Int
+         -> Planet
+         -> Planet
+setShips n p = p { planetShips = n }
+
+-- | Add a number of ships to a planet
 --
 addShips :: Int     -- ^ Number of ships to add
          -> Planet  -- ^ Planet to add ships to
          -> Planet  -- ^ Resulting planet
 addShips n p = p { planetShips = planetShips p + n }
+
+-- | Remove ships from a planet
+--
+removeShips :: Int    -- ^ Ships to remove
+            -> Planet -- ^ Planet from which to remove
+            -> Planet -- ^ Resulting planet
+removeShips n p = p { planetShips = planetShips p - n }
 
 -- | Find the distance between two planets
 --
