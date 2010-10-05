@@ -258,13 +258,13 @@ buildGameState :: GameState  -- ^ Initial game state
                -> String     -- ^ Line to parse and apply
                -> GameState  -- ^ Resulting game state
 buildGameState state string = case words string of
-    ("P" : xs) ->
+    ("P" : strX : strY : strOwner : strShips : strGrowthRate : _) ->
         let planet = Planet planetId'
-                            (read $ xs !! 2)
-                            (read $ xs !! 3)
-                            (read $ xs !! 4)
-                            (read $ xs !! 0)
-                            (read $ xs !! 1)
+                            (read strOwner)
+                            (read strShips)
+                            (read strGrowthRate)
+                            (read strX)
+                            (read strY)
         in state { gameStatePlanets = IM.insert planetId' planet
                                                 (gameStatePlanets state)
                  }
