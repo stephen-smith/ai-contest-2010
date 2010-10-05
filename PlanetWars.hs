@@ -294,7 +294,7 @@ isHostile = (> 1) . owner
 -- | Check if a given resource is neutral
 --
 isNeutral :: Resource r => r -> Bool
-isNeutral = (<= 0) . owner
+isNeutral = (< 1) . owner
 
 -- | Perform the 'Departure' phase of game state update
 --
