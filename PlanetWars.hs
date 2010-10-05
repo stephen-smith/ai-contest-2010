@@ -268,13 +268,13 @@ buildGameState state string = case words string of
         in state { gameStatePlanets = IM.insert planetId' planet
                                                 (gameStatePlanets state)
                  }
-    ("F" : xs) ->
-        let fleet = Fleet (read $ xs !! 0)
-                          (read $ xs !! 1)
-                          (read $ xs !! 2)
-                          (read $ xs !! 3)
-                          (read $ xs !! 4)
-                          (read $ xs !! 5)
+    ("F" : strOwner : strShips : strSrc : strDest : strLen : strRem : _) ->
+        let fleet = Fleet (read strOwner)
+                          (read strShips)
+                          (read strSrc)
+                          (read strDest)
+                          (read strLen)
+                          (read strRem)
         in state { gameStateFleets = fleet : gameStateFleets state
                  }
     _ -> state
