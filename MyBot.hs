@@ -144,17 +144,6 @@ doTurn state = if IM.null myPlanets
         wps = filter isAllied $ (waypoints IM.! s) IM.! d
         wp = maximumBy (comparing $ distanceById s) $ map planetId wps
 
-    -- Heuristic value of a planet.
-    value (p, (t, s, l)) = (reward, t, s, l)
-      where
-        -- Calculate reward for the planet
-        reward = if isHostile p then -growth else l - growth
-        growth = planetGrowthRate p * growthFactor * growthTime
-        growthFactor = if isNeutral p
-            then 1
-            else 2
-        growthTime = max 0 $ maxTransitTime - t
-
     fleeOrders :: GameState -- ^ Current game state
                -> [Order]   -- ^ Proposed flights
     fleeOrders gs | myShips > theirShips = []
@@ -197,6 +186,7 @@ doTurn state = if IM.null myPlanets
       where
         -- Predict the future given current game state
         stateByTime = futureByTime maxTransitTime gs
+        scheduleLimit = endOfTime stateByTime
         availableShips = shipsAvailableAlways stateByTime
 
         -- Extend the planet structure with some useful data
@@ -212,6 +202,17 @@ doTurn state = if IM.null myPlanets
         extendGameState t = IM.elems . IM.map ep . gameStatePlanets
           where
             ep = extendPlanet t
+
+        -- Heuristic value of a planet.
+        value (p, (t, s, l)) = (reward, t, s, l)
+          where
+            -- Calculate reward for the planet
+            reward = if isHostile p then -growth else l - growth
+            growth = planetGrowthRate p * growthFactor * growthTime
+            growthFactor = if isNeutral p
+                then 1
+                else 2
+            growthTime = max 0 $ scheduleLimit - t
 
         -- Target the "best" planet that we have enough ships to take.
         targets = map fst $ sortBy (comparing snd)
