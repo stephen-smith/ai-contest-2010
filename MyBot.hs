@@ -145,11 +145,10 @@ doTurn state = if IM.null myPlanets
         wp = maximumBy (comparing $ distanceById s) $ map planetId wps
 
     -- Heuristic value of a planet.
-    value (p, (t, s, l)) = (cappedReward, t, s, l)
+    value (p, (t, s, l)) = (reward, t, s, l)
       where
         -- Calculate reward for the planet
-        cappedReward = if isHostile p then min (-1) reward else reward
-        reward = l - growth
+        reward = if isHostile p then -growth else l - growth
         growth = planetGrowthRate p * growthFactor * growthTime
         growthFactor = if isNeutral p
             then 1
@@ -218,7 +217,7 @@ doTurn state = if IM.null myPlanets
         targets = map fst $ sortBy (comparing snd)
                 $ filter suitable $ map (extendOn value) $ concat $ IM.elems
                 $ IM.mapWithKey extendGameState stateByTime
-        suitable ((p, (t, s, _)), v) = reward < 0 && 0 < s && s <= shipsInRange
+        suitable ((p, (t, s, _)), v) = reward <= 0 && 0 < s && s <= shipsInRange
           where
             (reward, _, _, _) = v
             shipsInRange = sum $ IM.elems
