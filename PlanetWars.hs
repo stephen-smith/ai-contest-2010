@@ -10,6 +10,8 @@ module PlanetWars
     , Fleet (..)
     , Order (..)
     , GameState (..)
+    , GameStateInfo (..)
+    , makeGSI
 
       -- * Utility functions
     , isAllied
@@ -21,8 +23,6 @@ module PlanetWars
     , distanceBetween
     , centroid
     , isArrived
-    , planets
-    , production
     , planetById
     , willSurviveAttack
     , currentOwner
@@ -55,6 +55,7 @@ module PlanetWars
     ) where
 
 import Control.Applicative ((<$>), (<*>))
+import qualified Data.Foldable as F
 import Data.List (intercalate, isPrefixOf, partition, foldl', sortBy)
 import Data.Maybe (fromJust)
 import Data.Monoid (Monoid, mempty, mappend)
@@ -141,10 +142,113 @@ instance Monoid GameState where
     mappend (GameState p1 f1) (GameState p2 f2) =
         GameState (p1 `mappend` p2) (f1 `mappend` f2)
 
+data GameStateInfo = GSI
+    { gsiGameState :: GameState
+
+    -- Planet stuff
+    , gsiPlanetCount :: Int
+
+    , gsiPlanetsByOwner :: IntMap (IntMap Planet)
+    , gsiNeutralPlanets :: IntMap Planet
+    , gsiAlliedPlanets :: IntMap Planet
+    , gsiNonAlliedPlanets :: IntMap Planet
+    , gsiHostilePlanets :: IntMap Planet
+
+    , gsiDistances :: IntMap (IntMap Int)
+    , gsiDistanceById :: Int -> Int -> Int
+
+    , gsiProductionByOwner :: IntMap Int
+    , gsiAlliedProduction :: Int
+    , gsiHostileProduction :: Int
+
+    -- Fleet stuff
+    , gsiFleetCount :: Int
+
+    , gsiFleetsByOwner :: IntMap [Fleet]
+    , gsiAlliedFleets :: [Fleet]
+    , gsiHostileFleets :: [Fleet]
+
+    -- Combined info
+    , gsiShipsByOwner :: IntMap Int
+    , gsiAlliedShips :: Int
+    , gsiHostileShips :: Int
+    }
+
+makeGSI :: GameState
+        -> GameStateInfo
+makeGSI gs = GSI
+    { gsiGameState = gs
+
+    , gsiPlanetCount = planetCount
+
+    , gsiPlanetsByOwner = planetsByOwner
+    , gsiNeutralPlanets = neutralPlanets
+    , gsiAlliedPlanets = alliedPlanets
+    , gsiNonAlliedPlanets = nonAlliedPlanets
+    , gsiHostilePlanets = hostilePlanets
+
+    , gsiDistances = distances
+    , gsiDistanceById = distanceById
+
+    , gsiProductionByOwner = productionByOwner
+    , gsiAlliedProduction = alliedProduction
+    , gsiHostileProduction = hostileProduction
+
+    , gsiFleetCount = fleetCount
+
+    , gsiFleetsByOwner = fleetsByOwner
+    , gsiAlliedFleets = alliedFleets
+    , gsiHostileFleets = hostileFleets
+
+    , gsiShipsByOwner = shipsByOwner
+    , gsiAlliedShips = alliedShips
+    , gsiHostileShips = hostileShips
+    }
+  where
+    planets = gameStatePlanets gs
+    fleets = gameStateFleets gs
+
+    planetCount = IM.size planets
+
+    planetsByOwner = IM.foldWithKey accum IM.empty planets
+      where
+        accum pid p = IM.insertWith IM.union (planetOwner p) $ IM.singleton pid p
+    (np, ap, hp) = IM.splitLookup 1 planetsByOwner
+    neutralPlanets = IM.fold IM.union IM.empty np
+    alliedPlanets = maybe IM.empty id ap
+    nonAlliedPlanets = neutralPlanets `IM.union` hostilePlanets
+    hostilePlanets = IM.fold IM.union IM.empty hp
+
+    distances = IM.map distancesFrom planets
+      where
+        distancesFrom p = IM.map (ceiling . distanceBetween p) planets
+    distanceById = (IM.!) . (distances IM.!)
+
+    productionByOwner = IM.map (F.sum . IM.map planetGrowthRate) planetsByOwner
+    (_, aprod, hprod) = IM.splitLookup 1 productionByOwner
+    alliedProduction = maybe 0 id aprod
+    hostileProduction = F.sum hprod
+
+    fleetCount = length fleets
+
+    fleetsByOwner = foldr accum IM.empty fleets
+      where accum f = IM.insertWith (++) (fleetOwner f) [f]
+    (_, af, hf) = IM.splitLookup 1 fleetsByOwner
+    alliedFleets = maybe [] id af
+    hostileFleets = F.concat hf
+
+    shipsByOwner = IM.unionWith (+) planetShipsByOwner fleetShipsByOwner
+      where
+        planetShipsByOwner = IM.map (F.sum . IM.map planetShips) planetsByOwner
+        fleetShipsByOwner = IM.map (sum . map fleetShips) fleetsByOwner
+    (_, aships, hships) = IM.splitLookup 1 shipsByOwner
+    alliedShips = maybe 0 id aships
+    hostileShips = F.sum hships
+
 -- | Find planet in GameState with given planetId
 --
 getPlanetById :: Int -> GameState -> Planet
-getPlanetById id state = (IM.!) (gameStatePlanets state) id
+getPlanetById pid state = (IM.!) (gameStatePlanets state) pid
 
 -- | Auxiliary function for parsing the game state. This function takes an
 -- initial state, and a line. The line is parsed and content is applied on the
@@ -154,23 +258,23 @@ buildGameState :: GameState  -- ^ Initial game state
                -> String     -- ^ Line to parse and apply
                -> GameState  -- ^ Resulting game state
 buildGameState state string = case words string of
-    ("P" : xs) ->
+    ("P" : strX : strY : strOwner : strShips : strGrowthRate : _) ->
         let planet = Planet planetId'
-                            (read $ xs !! 2)
-                            (read $ xs !! 3)
-                            (read $ xs !! 4)
-                            (read $ xs !! 0)
-                            (read $ xs !! 1)
+                            (read strOwner)
+                            (read strShips)
+                            (read strGrowthRate)
+                            (read strX)
+                            (read strY)
         in state { gameStatePlanets = IM.insert planetId' planet
                                                 (gameStatePlanets state)
                  }
-    ("F" : xs) ->
-        let fleet = Fleet (read $ xs !! 0)
-                          (read $ xs !! 1)
-                          (read $ xs !! 2)
-                          (read $ xs !! 3)
-                          (read $ xs !! 4)
-                          (read $ xs !! 5)
+    ("F" : strOwner : strShips : strSrc : strDest : strLen : strRem : _) ->
+        let fleet = Fleet (read strOwner)
+                          (read strShips)
+                          (read strSrc)
+                          (read strDest)
+                          (read strLen)
+                          (read strRem)
         in state { gameStateFleets = fleet : gameStateFleets state
                  }
     _ -> state
@@ -190,7 +294,7 @@ isHostile = (> 1) . owner
 -- | Check if a given resource is neutral
 --
 isNeutral :: Resource r => r -> Bool
-isNeutral = (<= 0) . owner
+isNeutral = (< 1) . owner
 
 -- | Perform the 'Departure' phase of game state update
 --
@@ -262,7 +366,7 @@ departure ordersMap gs = ( droppedPlayers, gs' )
 departureNoFailReport :: IntMap [Order] -- ^ Orders, grouped by issuing player
                       -> GameState      -- ^ Old game state
                       -> GameState      -- ^ New game state
-departureNoFailReport = (snd <$>) <$> departure
+departureNoFailReport = (snd .) . departure
 
 -- | Perform the 'Departure' phase of game state update with no orders
 --
@@ -345,27 +449,26 @@ engineTurn ordersMap gs = ( ( gameOver, winner , dropped ++ losers), gs' )
     (dropped, gs'') = departure ordersMap gs
 
     -- Who is left after that?
-    planetPlayers' = IM.elems $ IM.map (IS.singleton <$> planetOwner)
-                  $ gameStatePlanets gs''
-    fleetPlayers' = map (IS.singleton <$> fleetOwner) $ gameStateFleets gs''
-    notDroppedPlayers = IS.unions $ planetPlayers' ++ fleetPlayers'
+    planetPlayers' = IM.elems . IM.map planetOwner $ gameStatePlanets gs''
+    fleetPlayers' = map fleetOwner $ gameStateFleets gs''
+    (_, notDroppedPlayers) = IS.split 0 . IS.fromList
+                           $ planetPlayers' ++ fleetPlayers'
 
     -- Advancement and arrival phases
     gs' = arrival $ advancement gs''
 
     -- Who is left after that?
-    planetPlayers = IM.elems $ IM.map (IS.singleton . planetOwner)
-                  $ IM.filter (not . isNeutral) $ gameStatePlanets gs'
-    fleetPlayers = map (IS.singleton . fleetOwner) $ gameStateFleets gs'
-    remainingPlayers = IS.unions $ planetPlayers ++ fleetPlayers
+    planetPlayers = IM.elems . IM.map planetOwner $ gameStatePlanets gs'
+    fleetPlayers = map fleetOwner $ gameStateFleets gs'
+    (_, remainingPlayers) = IS.split 0 . IS.fromList $ planetPlayers ++ fleetPlayers
 
     -- Find the losers
-    losers = IS.elems $ IS.difference remainingPlayers notDroppedPlayers
+    losers = IS.elems $ remainingPlayers IS.\\ notDroppedPlayers
 
     -- Find the winner and end the game
     countRemaining = IS.size remainingPlayers
     gameOver = countRemaining < 2
-    winner | countRemaining == 1 = Just $ head $ IS.elems remainingPlayers
+    winner | countRemaining == 1 = Just . head $ IS.elems remainingPlayers
            | otherwise           = Nothing
 
 -- | Do a full game state update, but don't report game over, winner, or losers
@@ -393,12 +496,31 @@ simpleEngineTurn :: GameState -- ^ Old game state
                  -> GameState -- ^ New game state
 simpleEngineTurn = engineTurnNoReport IM.empty
 
--- | Add (or subtract) a number of ships to (or from) a planet
+setOwner :: Int
+         -> Planet
+         -> Planet
+setOwner o p = p { planetOwner = o }
+
+-- | Set the number of ships on a planet
 --
-addShips :: Planet  -- ^ Planet to add ships to
-         -> Int     -- ^ Number of ships to add
+setShips :: Int
+         -> Planet
+         -> Planet
+setShips n p = p { planetShips = n }
+
+-- | Add a number of ships to a planet
+--
+addShips :: Int     -- ^ Number of ships to add
+         -> Planet  -- ^ Planet to add ships to
          -> Planet  -- ^ Resulting planet
-addShips planet n = planet {planetShips = planetShips planet + n}
+addShips n p = p { planetShips = planetShips p + n }
+
+-- | Remove ships from a planet
+--
+removeShips :: Int    -- ^ Ships to remove
+            -> Planet -- ^ Planet from which to remove
+            -> Planet -- ^ Resulting planet
+removeShips n p = p { planetShips = planetShips p - n }
 
 -- | Find the distance between two planets
 --
@@ -421,24 +543,6 @@ centroid planets = div' $ IM.fold add' (0, 0) planets
 isArrived :: Fleet -> Bool
 isArrived = (== 0) . fleetTurnsRemaining
 
--- | List of Planets from a game state.
---
-planets :: GameState  -- ^ Game state to analyze
-        -> [Planet]   -- ^ List of Planets
-planets state = map snd $ IM.toList $ gameStatePlanets state
-
--- | Calculate the production (number of new ships in the next turn) of both
--- players.
---
-production :: GameState  -- ^ Game state to analyze
-           -> (Int, Int) -- ^ Pair having the player and enemy's production
-production g = foldl' prod (0,0) (planets g)
-  where 
-    prod (x,y) p = case planetOwner p of
-      0 -> (x,y)
-      1 -> (x + planetGrowthRate p, y)
-      2 -> (x, y + planetGrowthRate p)
-
 -- | Get a planet by ID. Make sure the ID exists!
 --
 planetById :: GameState -> Int -> Planet
@@ -447,12 +551,6 @@ planetById state id' = fromJust $ IM.lookup id' $ gameStatePlanets state
 stepAllFleets :: GameState -> GameState
 stepAllFleets state | null (gameStateFleets state) = state
                     | otherwise = stepAllFleets $ simpleEngineTurn state
-
--- | Aux
-partitionToIntMap :: (a -> Int) -> [a] -> IntMap [a]
-partitionToIntMap fn as =
-    let ins x = IM.insertWith (++) (fn x) [x]
-    in  foldr ins IM.empty as
 
 -- | Issue an order
 --
@@ -509,15 +607,15 @@ debugBot f = do
     run h s = do
         orders <- stateDump h s
         dumpIssue h orders
-    dumpIssue log orders = do
-        hPutStrLn log "\nOrders:"
-        hPutStrLn log $ show orders
-        hFlush log
+    dumpIssue hlog orders = do
+        hPutStrLn hlog "\nOrders:"
+        hPutStrLn hlog $ show orders
+        hFlush hlog
         mapM_ issueOrder orders
-    stateDump log s = do
-        hPutStrLn log "\nState:"
-        hPutStrLn log $ show s
-        hFlush log
+    stateDump hlog s = do
+        hPutStrLn hlog "\nState:"
+        hPutStrLn hlog $ show s
+        hFlush hlog
         return $ f s
 
 -- | Read a game state from file. The format is the same as the server's output
@@ -525,13 +623,13 @@ debugBot f = do
 --
 stateFromFile :: FilePath     -- ^ Path to the file containing the game state.
               -> IO GameState -- ^ Parsed game state
-stateFromFile path = withFile path ReadMode (read mempty)
+stateFromFile path = withFile path ReadMode (loop mempty)
   where
-    read state handle = do
+    loop state handle = do
       line <- takeWhile (/= '#') <$> hGetLine handle
       if "go" `isPrefixOf` line
         then return state
-        else read (buildGameState state line) handle
+        else loop (buildGameState state line) handle
 
 -- | Checks if a planet will survive the incoming fleets. A planet survives if
 -- its owner is still the same after all known fleets arrive.
@@ -574,3 +672,4 @@ incomingFleets state pid = filter pidMatches fleets
 unique :: [Int] -> [Int]
 unique = IS.toList . IS.fromList
 
+-- ex: set sw=4 et ts=4 sts=4: Vim modeline
