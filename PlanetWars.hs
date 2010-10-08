@@ -51,7 +51,6 @@ module PlanetWars
 
       -- * Debugging
     , stateFromFile
-    , unique
     ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -666,10 +665,5 @@ incomingFleets state pid = filter pidMatches fleets
   where
     pidMatches = (== pid) . fleetDestination
     fleets = gameStateFleets state
-
--- | Removes duplicates from a list of Ints
---
-unique :: [Int] -> [Int]
-unique = IS.toList . IS.fromList
 
 -- ex: set sw=4 et ts=4 sts=4: Vim modeline
