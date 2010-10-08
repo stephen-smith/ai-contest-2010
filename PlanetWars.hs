@@ -39,7 +39,7 @@ module PlanetWars
     , ioBot
     , debugBot
 
-      -- ^ Engine / Simulation
+      -- * Engine / Simulation
     , departureNoFailReport
     , simpleDeparture
     , advancement
@@ -300,9 +300,9 @@ isNeutral = (< 1) . owner
 --
 departure :: IntMap [Order] -- ^ Orders, grouped by issuing player
           -> GameState      -- ^ Old game state
-          -> ( [Int]        -- ^ Players that gave an invalid order
-             , GameState    -- ^ New game state
-             )
+          -> ( [Int]
+             , GameState
+             )  -- ^ Players that gave an invalid order and the new game state
 departure ordersMap gs = ( droppedPlayers, gs' )
   where
     ( droppedPlayers, gs' ) = foldl' accum ([], gs) $ IM.assocs
@@ -437,12 +437,12 @@ arrival gs = gs { gameStatePlanets =
 --
 engineTurn :: IntMap [Order] -- ^ Orders grouped by issuing player
            -> GameState      -- ^ Old game state
-           -> ( ( Bool       -- ^ Game over?
-                , Maybe Int  -- ^ Winner, if there is one
-                , [Int]      -- ^ Players that lost this turn
+           -> ( ( Bool
+                , Maybe Int
+                , [Int]
                 )
-              , GameState    -- ^ New game state
-              )
+              , GameState
+              ) -- ^ Game over?, winner, and players that lost and the new game state
 engineTurn ordersMap gs = ( ( gameOver, winner , dropped ++ losers), gs' )
   where
     -- Departure phase
@@ -481,12 +481,12 @@ engineTurnNoReport = ((arrival . advancement) .) . departureNoFailReport
 -- | Do a full game state update as if no players gave any orders
 --
 engineTurnNoOrders :: GameState     -- ^ Old game state
-                   -> ( ( Bool      -- ^ Game Over?
-                        , Maybe Int -- ^ Winner, if there is one.
-                        , [Int]     -- ^ Players that lost this turn
+                   -> ( ( Bool
+                        , Maybe Int
+                        , [Int]
                         )
-                      , GameState   -- ^ New game state
-                      )
+                      , GameState
+                      ) -- ^ Game over?, winner, and players that last and new game state
 engineTurnNoOrders = engineTurn IM.empty
 
 -- | Do a full game state update as if no players gave any orders but don't
