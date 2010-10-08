@@ -78,7 +78,7 @@ data Planet = Planet
     , planetGrowthRate :: Int
     , planetX          :: Double
     , planetY          :: Double
-    } deriving (Show)
+    } deriving (Eq, Show)
 
 instance Resource Planet where
     owner = planetOwner
