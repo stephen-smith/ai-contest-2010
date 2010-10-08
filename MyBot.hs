@@ -174,9 +174,9 @@ doTurn state = if IM.null myPlanets
                          $ sortBy (comparing snd) possibleDestinations
 
     attackOrders :: GameState    -- ^ Old game state
-                 -> ( [Order]    -- ^ Proposed deployments
-                    , GameState  -- ^ New game state
-                    )
+                 -> ( [Order]
+                    , GameState
+                    ) -- ^ Proposed deployments and new game state
     attackOrders gs
       | IM.null availableShips = ([], gs)
       | null targets           = ([], gs)
