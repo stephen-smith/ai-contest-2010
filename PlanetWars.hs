@@ -1,7 +1,6 @@
 -- | Library for the Planet Wars google ai contest. More information can be
 -- found on http://ai-contest.com.
 --
-{-# LANGUAGE FlexibleInstances #-}
 module PlanetWars
     ( 
       -- * Data structures
