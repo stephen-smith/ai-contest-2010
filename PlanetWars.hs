@@ -83,6 +83,23 @@ data Planet = Planet
 instance Resource Planet where
     owner = planetOwner
 
+data PlanetInput = PlanetInput
+    { piOwner      :: Int
+    , piShips      :: Int
+    , piGrowthRate :: Int
+    , piX          :: Double
+    , piY          :: Double
+    }
+
+makePlanet pid input = Planet
+    { planetId = pid
+    , planetOwner = piOwner input
+    , planetShips = piShips input
+    , planetGrowthRate = piGrowthRate input
+    , planetX = piX input
+    , planetY = piY input
+    }
+
 -- | Representation of a fleet
 --
 data Fleet = Fleet
