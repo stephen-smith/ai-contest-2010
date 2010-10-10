@@ -102,10 +102,6 @@ doTurn state = if IM.null myPlanets
     (myPlanets, notMyPlanets) = IM.partition isAllied planetsMap
     enemyPlanets = IM.filter isHostile notMyPlanets
 
-    -- Count production
-    myProduction = sum . map planetGrowthRate $ IM.elems myPlanets
-    theirProduction = sum . map planetGrowthRate $ IM.elems enemyPlanets
-
     -- Count ship totals
     (myPlanetShips, theirPlanetShips) = IM.fold accum (0, 0) planetsMap
       where
@@ -125,19 +121,25 @@ doTurn state = if IM.null myPlanets
       where
         alliedShips p = if isAllied p then planetShips p else 0
         alliedByTime = IM.map (IM.map alliedShips . gameStatePlanets) sbt
+        naiveAvailableByTime = IM.fromList . zip [0..]
+                             . scanr1 (IM.intersectionWith min)
+                             $ IM.elems alliedByTime
 
         hostileShips p = if isHostile p then planetShips p else 0
         hostileByTime = IM.map (IM.map hostileShips . gameStatePlanets) sbt
 
-        available t pid allied = if myShips <= theirShips
-                                    && myProduction >= theirProduction
-            then max 0 $ allied - hostileInRange
-            else allied
+        available t pid allied = max 0 . (-) allied . max 0
+                               $ hostileInRange - availableInRange
           where
             hostileInRange = sum . IM.elems . IM.mapWithKey hostileShipsInRange
                            $ distances IM.! pid
             hostileShipsInRange qid d = if d <= t
                 then (hostileByTime IM.! (t - d)) IM.! qid
+                else 0
+            availableInRange = sum . IM.elems . IM.mapWithKey availableShipsInRange
+                           $ distances IM.! pid
+            availableShipsInRange qid d = if d <= t
+                then (naiveAvailableByTime IM.! (t - d)) IM.! qid
                 else 0
         availableByTime = IM.mapWithKey (\t -> IM.mapWithKey $ available t)
                         $ alliedByTime
