@@ -138,7 +138,7 @@ doTurn state = if IM.null myPlanets
                 else 0
             availableInRange = sum . IM.elems . IM.mapWithKey availableShipsInRange
                            $ distances IM.! pid
-            availableShipsInRange qid d = if d <= t
+            availableShipsInRange qid d = if qid /= pid && d <= t
                 then (naiveAvailableByTime IM.! (t - d)) IM.! qid
                 else 0
         availableByTime = IM.mapWithKey (\t -> IM.mapWithKey $ available t)
