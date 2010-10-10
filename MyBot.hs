@@ -100,7 +100,6 @@ doTurn state = if IM.null myPlanets
 
     -- Partition all planets
     (myPlanets, notMyPlanets) = IM.partition isAllied planetsMap
-    enemyPlanets = IM.filter isHostile notMyPlanets
 
     -- Count ship totals
     (myPlanetShips, theirPlanetShips) = IM.fold accum (0, 0) planetsMap
@@ -297,20 +296,13 @@ doTurn state = if IM.null myPlanets
         myDistancesToAttackable = IM.filter (not . IM.null)
                                 $ IM.map (`IM.intersection` notMyPlanets)
                                 $ myDistances
-        myDistancesToEnemy = IM.filter (not . IM.null)
-                           $ IM.map (`IM.intersection` enemyPlanets)
-                           $ myDistancesToAttackable
 
         minAttackDistances = IM.map (minimum . IM.elems)
                            $ myDistancesToAttackable
-        minEnemyDistances = IM.map (minimum . IM.elems)
-                          $ myDistancesToEnemy
 
         redeployPid pid ships
           | IM.null closer              = []
           | transitTime > scheduleLimit = []
-          | IM.null myDistancesToEnemy  = planetOrders
-          | 2 * transitTime > enemyDist = []
           | otherwise                   = planetOrders
           where
             -- This planet's distance from an attackable planet
@@ -318,9 +310,6 @@ doTurn state = if IM.null myPlanets
 
             -- Allied planets that are closer
             closer = IM.filter (< attackDist) $ IM.delete pid minAttackDistances
-
-            -- Find the closest enemy, which limits travel time
-            enemyDist = minEnemyDistances IM.! pid
 
             -- Determine where to send
             closest = head $ groupBy ((==) `on` snd) $ sortBy (comparing snd)
