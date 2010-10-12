@@ -5,11 +5,14 @@ module Main where
 import Control.Applicative ((<$>), (<*>))
 -- import Control.Monad (forM_, unless)
 
+import qualified Data.Foldable as F
 import Data.Function (on)
 import Data.List (partition, sortBy, groupBy, maximumBy)
 import qualified Data.IntMap as IM
 import Data.IntMap (IntMap)
 import Data.Ord (comparing)
+import qualified Data.Sequence as Seq
+import Data.Sequence (Seq)
 
 import PlanetWars
 
@@ -61,24 +64,24 @@ predict s = s : if over then [s'] else predict s'
 --
 futureByTime :: Int              -- ^ Maximum time
              -> GameState        -- ^ Initial Game State
-             -> IntMap GameState -- ^ Future game states indexed by time
-futureByTime n = IM.fromList . zip [0..n] . predict
+             -> Seq GameState -- ^ Future game states indexed by time
+futureByTime n = Seq.fromList . take (n + 1) . predict
 
 -- | Find the last turn predicted, which is the maximum key in the map.
 -- | This function will fail miserably if the map is empty.
 --
-endOfTime :: IntMap GameState -- ^ Future same states indexed by time
+endOfTime :: Seq GameState -- ^ Future same states indexed by time
           -> Int              -- ^ Maximum time index
-endOfTime = fst . fst . maybe (error "Main.endOfTime") id . IM.maxViewWithKey
+endOfTime = pred . Seq.length
 
 alliedShips :: Planet -- ^ Any planet
             -> Int    -- ^ Ships owned by me on that planet.
 alliedShips p = if isAllied p then planetShips p else 0
 
-shipsAvailableAlways :: IntMap GameState -- ^ Predicted game states
+shipsAvailableAlways :: Seq GameState -- ^ Predicted game states
                      -> IntMap Int      -- ^ Ships available throughout the prediction
-shipsAvailableAlways = IM.filter (/= 0) . IM.unionsWith min . IM.elems
-                     . IM.map (IM.map alliedShips . gameStatePlanets)
+shipsAvailableAlways = IM.filter (/= 0) . F.foldl (IM.unionWith min) IM.empty
+                     . fmap (IM.map alliedShips . gameStatePlanets)
 
 doTurn :: GameState  -- ^ Game state
        -> [Order]    -- ^ Orders
@@ -152,7 +155,7 @@ doTurn state = if IM.null myPlanets
         stateByTime = futureByTime maxTransitTime gs
         scheduleLimit = endOfTime stateByTime
 
-        next = stateByTime IM.! 1
+        next = stateByTime `Seq.index` 1
         theirPlanetsSoon = IM.filter isHostile $ gameStatePlanets next
 
         lostPlanets = IM.intersection myPlanets theirPlanetsSoon
@@ -166,7 +169,7 @@ doTurn state = if IM.null myPlanets
             planetsWithDistance = map (extendOn $ distanceById sourceId . planetId)
                                 $ IM.elems $ IM.delete sourceId planetsMap
             validDestination q d = d <= scheduleLimit && isAllied futurePlanet
-              where futurePlanet = planetById (stateByTime IM.! d) $ planetId q
+              where futurePlanet = planetById (stateByTime `Seq.index` d) $ planetId q
             possibleDestinations = filter (uncurry validDestination)
                                  $ planetsWithDistance
             destinations = sortBy (comparing planetShips) $ map fst $ head
@@ -196,7 +199,7 @@ doTurn state = if IM.null myPlanets
             -- Calculate cost for the planet
             (shipsToConquer, shipsLost) = if isAllied p
                 then (0, 0)
-                else if t > 0 && (isAllied $ planetById (stateByTime IM.! (t - 1)) $ planetId p)
+                else if t > 0 && (isAllied $ planetById (stateByTime `Seq.index` (t - 1)) $ planetId p)
                 then (shipsPresent, shipsPresent)
                 else (shipsPresent + 1, shipsPresent)
         extendGameState t = IM.elems . IM.map ep . gameStatePlanets
@@ -216,8 +219,8 @@ doTurn state = if IM.null myPlanets
 
         -- Target the "best" planet that we have enough ships to take.
         targets = map fst $ sortBy (comparing snd)
-                $ filter suitable $ map (extendOn value) $ concat $ IM.elems
-                $ IM.mapWithKey extendGameState stateByTime
+                $ filter suitable $ map (extendOn value) $ concat
+                $ zipWith extendGameState [0..] $ F.toList stateByTime
         suitable ((p, (t, s, _)), v) = reward <= 0 && 0 < s && s <= shipsInRange
           where
             (reward, _, _, _) = v
