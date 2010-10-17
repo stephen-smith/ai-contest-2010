@@ -5,6 +5,7 @@ module Main where
 import Control.Applicative ((<$>), (<*>))
 -- import Control.Monad (forM_, unless)
 
+import qualified Data.Foldable as F
 import Data.Function (on)
 import Data.List (partition, sortBy, groupBy, maximumBy)
 import qualified Data.IntMap as IM
@@ -120,30 +121,38 @@ doTurn state = if IM.null myPlanets
                              $ availableByTime
                              )
       where
-        alliedShips p = if isAllied p then planetShips p else 0
-        alliedByTime = IM.map (IM.map alliedShips . gameStatePlanets) sbt
+        alliedShips = IM.map planetShips . IM.filter isAllied
+        alliedByTime = IM.map (alliedShips . gameStatePlanets) sbt
         naiveAvailableByTime = IM.fromList . zip [0..]
                              . scanr1 (IM.intersectionWith min)
-                             $ IM.elems alliedByTime
+                             . IM.elems $! alliedByTime
 
-        hostileShips p = if isHostile p then planetShips p else 0
-        hostileByTime = IM.map (IM.map hostileShips . gameStatePlanets) sbt
+        hostileShips = IM.map planetShips . IM.filter isHostile
+        hostileByTime = IM.map (hostileShips . gameStatePlanets) sbt
+
+        threatByTime = IM.mapWithKey threats $ IM.map gameStatePlanets sbt
+        threats t = IM.mapWithKey threat
+          where
+            ds = (IM.!) distances
+            threat = const . F.sum . IM.mapWithKey hostile . IM.filter (<= t) . ds
+            hostile qid d = maybe 0 id . IM.lookup qid . (IM.! (t - d))
+                          $! hostileByTime
+
+        supportByTime = IM.mapWithKey supports $ IM.map gameStatePlanets sbt
+        supports t = IM.mapWithKey support
+          where
+            ds = ($) . IM.delete <*> (IM.!) distances
+            support = const . F.sum . IM.mapWithKey avail . IM.filter (<= t) . ds
+            avail qid d = maybe 0 id . IM.lookup qid . (IM.! (t - d))
+                        $! naiveAvailableByTime
 
         available t pid allied = max 0 . (-) allied . max 0
-                               $ hostileInRange - availableInRange
+                               $ threat - support
           where
-            hostileInRange = sum . IM.elems . IM.mapWithKey hostileShipsInRange
-                           $ distances IM.! pid
-            hostileShipsInRange qid d = if d <= t
-                then (hostileByTime IM.! (t - d)) IM.! qid
-                else 0
-            availableInRange = sum . IM.elems . IM.mapWithKey availableShipsInRange
-                           $ distances IM.! pid
-            availableShipsInRange qid d = if qid /= pid && d <= t
-                then (naiveAvailableByTime IM.! (t - d)) IM.! qid
-                else 0
+            threat = maybe 0 id . IM.lookup pid . (IM.! t) $! threatByTime
+            support = maybe 0 id . IM.lookup pid . (IM.! t) $! supportByTime
         availableByTime = IM.mapWithKey (\t -> IM.mapWithKey $ available t)
-                        $ alliedByTime
+                        $! alliedByTime
 
     -- Calculate way-points
     waypoints = IM.mapWithKey oneToMany planetsMap
@@ -328,7 +337,8 @@ doTurn state = if IM.null myPlanets
             planetOrders = zipWith (orderViaWaypoints pid) destinations sizes
 
         orders = concat $ IM.elems
-               $ IM.mapWithKey redeployPid availableShips
+               $ IM.mapWithKey redeployPid
+               $ availableShips `IM.intersection` myPlanets
 
         gs' = departureNoFailReport (IM.singleton 1 orders) gs
 
