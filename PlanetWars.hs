@@ -203,14 +203,9 @@ makeGameState gsi = GameState
             $ gsiPlanetInputs gsi
     planetCount = IM.size planets
 
-    planetsByOwner = IM.foldWithKey accum IM.empty planets
-      where
-        accum pid p = IM.insertWith IM.union (planetOwner p) $ IM.singleton pid p
-    (np, ap, hp) = IM.splitLookup 1 planetsByOwner
-    neutralPlanets = IM.fold IM.union IM.empty np
-    alliedPlanets = maybe IM.empty id ap
-    nonAlliedPlanets = neutralPlanets `IM.union` hostilePlanets
-    hostilePlanets = IM.fold IM.union IM.empty hp
+    ~( planetsByOwner, neutralPlanets, alliedPlanets, nonAlliedPlanets
+     , hostilePlanets
+     ) = pdoHelper planets
 
     distances = IM.map distancesFrom planets
       where
@@ -225,17 +220,37 @@ makeGameState gsi = GameState
     fleets = gsiFleets gsi
     fleetCount = length fleets
 
-    fleetsByOwner = foldr accum IM.empty fleets
-      where accum f = IM.insertWith (++) (fleetOwner f) [f]
-    (_, af, hf) = IM.splitLookup 1 fleetsByOwner
+    ~(fleetsByOwner, alliedFleets, hostileFleets) = fboHelper fleets
+
+    ~(shipsByOwner, alliedShips, hostileShips) =
+        sboHelper planetsByOwner fleetsByOwner
+
+pdoHelper planets = ( planetsByOwner, neutralPlanets, alliedPlanets
+                    , nonAlliedPlanets , hostilePlanets
+                    )
+  where
+    accum pid p = IM.insertWith IM.union (planetOwner p) $ IM.singleton pid p
+    planetsByOwner = IM.foldWithKey accum IM.empty planets
+    (np, ap, hp) = IM.splitLookup 1 planetsByOwner
+    neutralPlanets = IM.fold IM.union IM.empty np
+    alliedPlanets = maybe IM.empty id ap
+    nonAlliedPlanets = neutralPlanets `IM.union` hostilePlanets
+    hostilePlanets = IM.fold IM.union IM.empty hp
+
+fboHelper fleets = (fleetsByOwner, alliedFleets, hostileFleets)
+  where
+    accum f = IM.insertWith (++) (fleetOwner f) [f]
+    fleetsByOwner = foldl' accum IM.empty fleets
+    (_, af, hf) = IM.splitLookup 1 fbo
     alliedFleets = maybe [] id af
     hostileFleets = F.concat hf
 
+sboHelper pbo fbo = (shipsByOwner, alliedShips, hostileShips)
+  where
+    planetShipsByOwner = IM.map (F.sum . IM.map planetShips) pbo
+    fleetShipsByOwner = IM.map (sum . map fleetShips) fbo
     shipsByOwner = IM.unionWith (+) planetShipsByOwner fleetShipsByOwner
-      where
-        planetShipsByOwner = IM.map (F.sum . IM.map planetShips) planetsByOwner
-        fleetShipsByOwner = IM.map (sum . map fleetShips) fleetsByOwner
-    (_, aships, hships) = IM.splitLookup 1 shipsByOwner
+    (_, aships, hships) = IM.splitLookup 1 sbo
     alliedShips = maybe 0 id aships
     hostileShips = F.sum hships
 
