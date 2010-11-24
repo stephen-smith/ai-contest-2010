@@ -265,23 +265,30 @@ doTurn state = if IM.null myPlanets
                    -> ( [Order]
                       , GameState
                       )
-    redeployOrders gs | IM.null myDistancesToAttackable = ([], gs)
-                      | otherwise                       = (orders, gs')
+    redeployOrders gs | IM.null notMyPlanets = ([], gs)
+                      | otherwise            = (orders, gs')
       where
         stateByTime = futureByTime maxTransitTime gs
         scheduleLimit = endOfTime stateByTime
         availableShips = shipsAvailableAlways stateByTime
 
+        alliedInFuture pid t | t > scheduleLimit = False
+                             | otherwise         = isAllied futurePlanet
+          where
+            future = stateByTime IM.! t
+            futurePlanets = gameStatePlanets future
+            futurePlanet = futurePlanets IM.! pid
+
+        distancesToAttackable = IM.filter (not . IM.null)
+                              $ IM.map (`IM.intersection` notMyPlanets)
+                              $ distances
         myDistances = distances `IM.intersection` myPlanets
-        myDistancesToAttackable = IM.filter (not . IM.null)
-                                $ IM.map (`IM.intersection` notMyPlanets)
-                                $ myDistances
         myDistancesToEnemy = IM.filter (not . IM.null)
                            $ IM.map (`IM.intersection` enemyPlanets)
-                           $ myDistancesToAttackable
+                           $ myDistances
 
         minAttackDistances = IM.map (minimum . IM.elems)
-                           $ myDistancesToAttackable
+                           $ distancesToAttackable
         minEnemyDistances = IM.map (minimum . IM.elems)
                           $ myDistancesToEnemy
 
@@ -295,8 +302,9 @@ doTurn state = if IM.null myPlanets
             -- This planet's distance from an attackable planet
             attackDist = minAttackDistances IM.! pid
 
-            -- Allied planets that are closer
-            closer = IM.filter (< attackDist) $ IM.delete pid minAttackDistances
+            -- Allied (or soon-to-be allied) planets that are closer
+            closer = IM.filterWithKey alliedInFuture $ IM.filter (< attackDist)
+                   $ IM.delete pid minAttackDistances
 
             -- Find the closest enemy, which limits travel time
             enemyDist = minEnemyDistances IM.! pid
