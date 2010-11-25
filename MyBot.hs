@@ -11,6 +11,7 @@ import qualified Data.IntMap as IM
 import Data.IntMap (IntMap)
 import Data.Ord (comparing)
 
+import System.IO (hPutStrLn, stderr)
 import System.Timeout (timeout)
 
 import PlanetWars
@@ -95,7 +96,9 @@ limitTurn :: Int
           -> IO ()
 limitTurn ms b gs = do
 	mos <- timeout ms iob
-	mapM_ issueOrder $ maybe [] id mos
+	case mos of
+	 Nothing -> hPutStrLn stderr "WARNING: Timeout."
+	 Just x  -> mapM_ issueOrder x
  where
 	os = forceList $ b gs
 	iob = os `seq` return os
