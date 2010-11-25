@@ -158,6 +158,7 @@ doTurn state = if IM.null myPlanets
         lostPlanets = IM.intersection myPlanets theirPlanetsSoon
 
         flee p | null possibleDestinations = []
+               | isAllied planetFuture     = [] {- Sacrifice -}
                | otherwise                 =
               zipWith (Order sourceId) (map planetId destinations)
             $ filter (/= 0) $ planetShips p `pidgeonhole` length destinations
@@ -169,9 +170,12 @@ doTurn state = if IM.null myPlanets
               where futurePlanet = planetById (stateByTime IM.! d) $ planetId q
             possibleDestinations = filter (uncurry validDestination)
                                  $ planetsWithDistance
-            destinations = sortBy (comparing planetShips) $ map fst $ head
-                         $ groupBy ((==) `on` snd)
-                         $ sortBy (comparing snd) possibleDestinations
+            bestDestinations = head . groupBy ((==) `on` snd)
+                             $ sortBy (comparing snd) possibleDestinations
+            flightTime = snd . head $ bestDestinations
+            planetFuture = planetById ((stateByTime IM.!) . min scheduleLimit . (* 2) $ flightTime) sourceId
+            destinations = sortBy (comparing planetShips) . map fst
+                         $ bestDestinations
 
     attackOrders :: GameState    -- ^ Old game state
                  -> ( [Order]    -- ^ Proposed deployments
