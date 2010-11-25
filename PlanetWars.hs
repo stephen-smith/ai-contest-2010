@@ -64,6 +64,7 @@ import qualified Data.IntSet as IS
 import Data.Ord (comparing)
 import System.IO
 import System.IO.Error (isEOFError)
+import System.Mem (performGC)
 
 -- | Class for values that are owned by a player
 --
@@ -467,6 +468,7 @@ finishTurn :: IO ()   -- ^ Result
 finishTurn = do
     putStrLn "go"
     hFlush stdout
+    performGC
 
 -- | Run a deterministic bot
 --
