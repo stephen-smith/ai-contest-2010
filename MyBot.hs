@@ -117,8 +117,8 @@ doTurn state = if IM.null myPlanets
     shipsAvailableAlways :: IntMap GameState -- ^ Predicted game states
                          -> (IntMap Int, IntMap Int)      -- ^ Ships available throughout the prediction
     shipsAvailableAlways sbt = ( naiveAvailableByTime IM.! 0
-                             , IM.filter (/= 0) . IM.unionsWith min . IM.elems
-                             $ availableByTime
+                             , IM.filter (/= 0) . foldl1 (IM.intersectionWith min)
+                             $ IM.elems availableByTime
                              )
       where
         alliedShips = IM.map planetShips . IM.filter isAllied
