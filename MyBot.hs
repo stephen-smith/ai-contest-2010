@@ -11,6 +11,9 @@ import qualified Data.IntMap as IM
 import Data.IntMap (IntMap)
 import Data.Ord (comparing)
 
+import System.IO (hPutStrLn, stderr)
+import System.Timeout (timeout)
+
 import PlanetWars
 
 -- | Divide, rounding up, without using floating point
@@ -34,6 +37,10 @@ splitWhile _ [] = ([], [])
 splitWhile f l@(x:xs)
   | f x       = let (p, t) = splitWhile f xs in (x:p, t)
   | otherwise = ([], l)
+
+forceList :: [a] -> [a]
+forceList l@[]    = l
+forceList l@(x:y) = x `seq` forceList y `seq` l
 
 extendOn :: (a -> b) -> a -> (a, b)
 extendOn = ((,) . id <*>)
@@ -79,6 +86,22 @@ shipsAvailableAlways :: IntMap GameState -- ^ Predicted game states
                      -> IntMap Int      -- ^ Ships available throughout the prediction
 shipsAvailableAlways = IM.filter (/= 0) . IM.unionsWith min . IM.elems
                      . IM.map (IM.map alliedShips . gameStatePlanets)
+
+msPerTurn :: Int
+msPerTurn = 900000
+
+limitTurn :: Int
+          -> (GameState -> [Order])
+          -> GameState
+          -> IO ()
+limitTurn ms b gs = do
+	mos <- timeout ms iob
+	case mos of
+	 Nothing -> hPutStrLn stderr "WARNING: Timeout."
+	 Just x  -> mapM_ issueOrder x
+ where
+	os = forceList $ b gs
+	iob = os `seq` return os
 
 doTurn :: GameState  -- ^ Game state
        -> [Order]    -- ^ Orders
@@ -326,4 +349,4 @@ doTurn state = if IM.null myPlanets
         gs' = departureNoFailReport (IM.singleton 1 orders) gs
 
 main :: IO ()
-main = bot doTurn
+main = ioBot $ limitTurn msPerTurn doTurn
