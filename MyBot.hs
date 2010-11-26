@@ -144,6 +144,15 @@ doTurn state = if IM.null myPlanets
         wps = filter isAllied $ (waypoints IM.! s) IM.! d
         wp = maximumBy (comparing $ distanceById s) $ map planetId wps
 
+    hostileShips :: Planet -> Int
+    hostileShips p = if isHostile p then planetShips p else 0
+
+    timeSum :: IntMap (IntMap Int) -> IntMap (IntMap Int)
+    timeSum = undefined
+
+    threatByTime :: IntMap GameState -> IntMap (IntMap Int)
+    threatByTime sbt = timeSum $ IM.map (IM.map hostileShips . gameStatePlanets) sbt
+
     fleeOrders :: GameState -- ^ Current game state
                -> [Order]   -- ^ Proposed flights
     fleeOrders gs | myShips > theirShips = []
