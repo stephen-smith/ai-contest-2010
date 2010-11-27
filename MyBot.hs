@@ -5,6 +5,7 @@ module Main where
 import Control.Applicative ((<$>), (<*>))
 -- import Control.Monad (forM_, unless)
 
+import qualified Data.Foldable as F
 import Data.Function (on)
 import Data.List (partition, sortBy, groupBy, maximumBy)
 import qualified Data.IntMap as IM
@@ -78,15 +79,6 @@ endOfTime :: IntMap GameState -- ^ Future same states indexed by time
           -> Int              -- ^ Maximum time index
 endOfTime = fst . fst . maybe (error "Main.endOfTime") id . IM.maxViewWithKey
 
-alliedShips :: Planet -- ^ Any planet
-            -> Int    -- ^ Ships owned by me on that planet.
-alliedShips p = if isAllied p then planetShips p else 0
-
-shipsAvailableAlways :: IntMap GameState -- ^ Predicted game states
-                     -> IntMap Int      -- ^ Ships available throughout the prediction
-shipsAvailableAlways = IM.filter (/= 0) . IM.unionsWith min . IM.elems
-                     . IM.map (IM.map alliedShips . gameStatePlanets)
-
 msPerTurn :: Int
 msPerTurn = 900000
 
@@ -132,7 +124,6 @@ doTurn state = if IM.null myPlanets
 
     -- Partition all planets
     (myPlanets, notMyPlanets) = IM.partition isAllied planetsMap
-    enemyPlanets = IM.filter isHostile notMyPlanets
 
     -- Count ship totals
     (myPlanetShips, theirPlanetShips) = IM.fold accum (0, 0) planetsMap
@@ -145,6 +136,46 @@ doTurn state = if IM.null myPlanets
       where
         [myFleetShips, theirFleetShips] =
             map (sum . map fleetShips) [myFleets, enemyFleets]
+
+    shipsAvailableAlways :: IntMap GameState -- ^ Predicted game states
+                         -> (IntMap Int, IntMap Int)      -- ^ Ships available throughout the prediction
+    shipsAvailableAlways sbt = ( naiveAvailableByTime IM.! 0
+                             , IM.filter (/= 0) . foldl1 (IM.intersectionWith min)
+                             $ IM.elems availableByTime
+                             )
+      where
+        alliedShips = IM.map planetShips . IM.filter isAllied
+        alliedByTime = IM.map (alliedShips . gameStatePlanets) sbt
+        naiveAvailableByTime = IM.fromList . zip [0..]
+                             . scanr1 (IM.intersectionWith min)
+                             . IM.elems $! alliedByTime
+
+        hostileShips = IM.map planetShips . IM.filter isHostile
+        hostileByTime = IM.map (hostileShips . gameStatePlanets) sbt
+
+        threatByTime = IM.mapWithKey threats $ IM.map gameStatePlanets sbt
+        threats t = IM.mapWithKey threat
+          where
+            ds = (IM.!) distances
+            threat = const . F.sum . IM.mapWithKey hostile . IM.filter (<= t) . ds
+            hostile qid d = maybe 0 id . IM.lookup qid . (IM.! (t - d))
+                          $! hostileByTime
+
+        supportByTime = IM.mapWithKey supports $ IM.map gameStatePlanets sbt
+        supports t = IM.mapWithKey support
+          where
+            ds = ($) . IM.delete <*> (IM.!) distances
+            support = const . F.sum . IM.mapWithKey avail . IM.filter (<= t) . ds
+            avail qid d = maybe 0 id . IM.lookup qid . (IM.! (t - d))
+                        $! naiveAvailableByTime
+
+        available t pid allied = max 0 . (-) allied . max 0
+                               $ threat - support
+          where
+            threat = maybe 0 id . IM.lookup pid . (IM.! t) $! threatByTime
+            support = maybe 0 id . IM.lookup pid . (IM.! t) $! supportByTime
+        availableByTime = IM.mapWithKey (\t -> IM.mapWithKey $ available t)
+                        $! alliedByTime
 
     -- Calculate way-points
     waypoints = IM.mapWithKey oneToMany planetsMap
@@ -205,7 +236,6 @@ doTurn state = if IM.null myPlanets
                     , GameState
                     ) -- ^ Proposed deployments and new game state
     attackOrders gs
-      | IM.null availableShips = ([], gs)
       | null targets           = ([], gs)
       | otherwise              = let
         (more, final) = attackOrders next
@@ -214,7 +244,7 @@ doTurn state = if IM.null myPlanets
         -- Predict the future given current game state
         stateByTime = futureByTime maxTransitTime gs
         scheduleLimit = endOfTime stateByTime
-        availableShips = shipsAvailableAlways stateByTime
+        (defenceShips, attackShips) = shipsAvailableAlways stateByTime
 
         -- Extend the planet structure with some useful data
         extendPlanet t p = (p, (t, shipsToConquer, shipsLost))
@@ -245,18 +275,22 @@ doTurn state = if IM.null myPlanets
         targets = map fst $ sortBy (comparing snd)
                 $ filter suitable $ map (extendOn value) $ concat $ IM.elems
                 $ IM.mapWithKey extendGameState stateByTime
-        suitable ((p, (t, s, _)), v) = reward <= 0 && 0 < s && s <= shipsInRange
+        suitable ((p, (t, s, l)), v) = reward <= 0 && 0 < s && s <= shipsInRange
           where
             (reward, _, _, _) = v
+            ships = if l == s then defenceShips else attackShips
             shipsInRange = sum $ IM.elems
                          $ IM.filterWithKey inRange
-                         $ availableShips
+                         $ ships
             inRange pid = const $ distanceById (planetId p) pid <= t
         (target:_) = targets
 
         -- Send at least enough ships to conquer it.
-        (targetPlanet, (targetTime, targetFleetSize, _)) = target
+        (targetPlanet, (targetTime, targetFleetSize, targetLosses)) = target
         distTarget = distanceById $ planetId targetPlanet
+        availableShips = if targetFleetSize == targetLosses
+            then defenceShips
+            else attackShips
 
         -- Send from close planets, first
         (localShips, localPids) = close $ groupBy ((==) `on` dist)
@@ -297,7 +331,7 @@ doTurn state = if IM.null myPlanets
       where
         stateByTime = futureByTime maxTransitTime gs
         scheduleLimit = endOfTime stateByTime
-        availableShips = shipsAvailableAlways stateByTime
+        (_, availableShips) = shipsAvailableAlways stateByTime
 
         alliedInFuture pid t | t > scheduleLimit = False
                              | otherwise         = isAllied futurePlanet
@@ -309,21 +343,13 @@ doTurn state = if IM.null myPlanets
         distancesToAttackable = IM.filter (not . IM.null)
                               $ IM.map (`IM.intersection` notMyPlanets)
                               $ distances
-        myDistances = distances `IM.intersection` myPlanets
-        myDistancesToEnemy = IM.filter (not . IM.null)
-                           $ IM.map (`IM.intersection` enemyPlanets)
-                           $ myDistances
 
         minAttackDistances = IM.map (minimum . IM.elems)
                            $ distancesToAttackable
-        minEnemyDistances = IM.map (minimum . IM.elems)
-                          $ myDistancesToEnemy
 
         redeployPid pid ships
           | IM.null closer              = []
           | transitTime > scheduleLimit = []
-          | IM.null myDistancesToEnemy  = planetOrders
-          | 2 * transitTime > enemyDist = []
           | otherwise                   = planetOrders
           where
             -- This planet's distance from an attackable planet
@@ -332,9 +358,6 @@ doTurn state = if IM.null myPlanets
             -- Allied (or soon-to-be allied) planets that are closer
             closer = IM.filterWithKey alliedInFuture $ IM.filter (< attackDist)
                    $ IM.delete pid minAttackDistances
-
-            -- Find the closest enemy, which limits travel time
-            enemyDist = minEnemyDistances IM.! pid
 
             -- Determine where to send
             closest = head $ groupBy ((==) `on` snd) $ sortBy (comparing snd)
@@ -348,7 +371,8 @@ doTurn state = if IM.null myPlanets
             planetOrders = zipWith (orderViaWaypoints pid) destinations sizes
 
         orders = concat $ IM.elems
-               $ IM.mapWithKey redeployPid availableShips
+               $ IM.mapWithKey redeployPid
+               $ availableShips `IM.intersection` myPlanets
 
         gs' = departureNoFailReport (IM.singleton 1 orders) gs
 
